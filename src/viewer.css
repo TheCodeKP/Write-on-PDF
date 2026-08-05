@@ -1,0 +1,927 @@
+:root {
+  --chrome: #21242b;
+  --chrome-2: #2a2e37;
+  --chrome-3: #343945;
+  --backdrop: #33363d;
+  --line: #3c414d;
+  --text: #e8eaee;
+  --muted: #9aa2b1;
+  --accent: #3b82f6;
+  --accent-strong: #2563eb;
+  --danger: #ef4444;
+  --radius: 7px;
+  --bar-height: 44px;
+  --tools-height: 40px;
+  --chrome-height: 84px; /* both bars, for things layered over the page area */
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* The browser's own [hidden] rule is a plain `display: none`, so any author
+   rule setting a display beats it and the element stays on screen. Everything
+   here is toggled through the hidden property, so it has to actually win. */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--backdrop);
+  color: var(--text);
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  overflow: hidden;
+}
+
+.sprite {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ toolbar */
+
+#toolbar {
+  position: relative;
+  z-index: 20;
+  flex: none;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 1px 6px rgb(0 0 0 / 35%);
+  user-select: none;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--bar-height);
+  padding: 0 10px;
+}
+
+.bar-tools {
+  height: var(--tools-height);
+  border-top: 1px solid var(--line);
+  background: var(--chrome-2);
+}
+
+.sep {
+  width: 1px;
+  height: 22px;
+  margin: 0 6px;
+  background: var(--line);
+  flex: none;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.filename {
+  max-width: 22vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  padding: 0 4px;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* -------------------------------------------------------------------- buttons */
+
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  min-width: 30px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+button.icon {
+  padding: 0;
+  width: 30px;
+}
+
+button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+button:hover:not(:disabled) {
+  background: var(--chrome-3);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Reads as ordinary until you go near it, so it stays out of the way of the
+   buttons people press all day. */
+.danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: #fca5a5;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button.primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+button.wide {
+  width: 100%;
+}
+
+button.zoom {
+  min-width: 54px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.tools {
+  display: flex;
+  gap: 2px;
+}
+
+.tool.selected {
+  background: var(--accent);
+  color: #fff;
+}
+
+.tool.selected:hover {
+  background: var(--accent-strong);
+}
+
+button.toggle[aria-pressed='true'] {
+  background: var(--chrome-3);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+button.mini {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 16px;
+  height: 16px;
+  min-width: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--chrome-3);
+  border: 1px solid var(--line);
+  font-size: 10px;
+  line-height: 1;
+}
+
+/* --------------------------------------------------------------- form bits */
+
+input[type='number'],
+input[type='text'],
+input[type='password'],
+select {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--chrome-3);
+  color: var(--text);
+  font: inherit;
+}
+
+input[type='number'] {
+  width: 58px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pager input {
+  width: 52px;
+}
+
+.options {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 0 4px;
+}
+
+.field input[type='range'] {
+  width: 84px;
+  accent-color: var(--accent);
+}
+
+.swatch {
+  position: relative;
+  display: inline-flex;
+}
+
+.swatch input[type='color'] {
+  width: 30px;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--chrome-3);
+  cursor: pointer;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.check input {
+  accent-color: var(--accent);
+}
+
+/* ------------------------------------------------------------------ progress */
+
+#progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 2px;
+  background: transparent;
+  overflow: hidden;
+}
+
+#progressBar {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.2s ease;
+  opacity: 0;
+}
+
+#progress.busy #progressBar {
+  opacity: 1;
+}
+
+/* ------------------------------------------------------------------ find bar */
+
+#findBar {
+  position: fixed;
+  top: calc(var(--chrome-height) + 12px);
+  right: 18px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--chrome);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+}
+
+.find-icon {
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+#findInput {
+  width: 210px;
+}
+
+#findCount {
+  min-width: 78px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------- signature strip */
+
+.stamp-strip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 40vw;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.stamp-chip {
+  position: relative;
+  flex: none;
+  display: block;
+  height: 30px;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  cursor: pointer;
+}
+
+.stamp-chip img {
+  height: 100%;
+  max-width: 96px;
+  display: block;
+  object-fit: contain;
+}
+
+.stamp-chip:hover {
+  border-color: var(--muted);
+}
+
+.stamp-chip.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgb(59 130 246 / 40%);
+}
+
+.stamp-chip .drop {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.stamp-chip:hover .drop {
+  opacity: 1;
+}
+
+/* The copy that trails the cursor before you commit to a spot. */
+.stamp-ghost {
+  position: absolute;
+  opacity: 0.55;
+  outline: 1px dashed var(--accent);
+  outline-offset: 3px;
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* ------------------------------------------------------------------- pages */
+
+#scroller {
+  flex: 1 1 auto;
+  overflow: auto;
+  position: relative;
+  scrollbar-color: #5a606d transparent;
+}
+
+#pages {
+  position: relative;
+  margin: 0 auto;
+}
+
+.page {
+  position: absolute;
+  background: #fff;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 45%);
+}
+
+.page.blank {
+  background:
+    linear-gradient(#fff, #fff) padding-box,
+    repeating-linear-gradient(-45deg, #f3f4f6 0 12px, #eceef1 12px 24px) border-box;
+}
+
+.page canvas {
+  display: block;
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 0;
+}
+
+/* --------------------------------------------------------------- find layer */
+
+.findLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.findLayer .hit {
+  position: absolute;
+  background: rgb(255 196 0 / 40%);
+  border-radius: 2px;
+  mix-blend-mode: multiply;
+}
+
+.findLayer .hit.current {
+  background: rgb(255 128 0 / 60%);
+  box-shadow: 0 0 0 2px rgb(255 128 0 / 85%);
+}
+
+/* --------------------------------------------------------------- text layer */
+
+/* Width and height come from PDF.js via --scale-factor, so only the corner is
+   pinned here; setting inset would fight it. */
+.textLayer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  overflow: hidden;
+  line-height: 1;
+  text-align: initial;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: transparent;
+}
+
+.textLayer span,
+.textLayer br {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0 0;
+}
+
+.textLayer ::selection {
+  background: rgb(59 130 246 / 35%);
+}
+
+.textLayer .endOfContent {
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: -1;
+  display: block;
+  cursor: default;
+  user-select: none;
+}
+
+/* PDF.js positions text in unrotated page space and expects the container to be
+   turned by CSS. These four rules are what make a rotated view select correctly. */
+.textLayer[data-main-rotation='90'] {
+  transform: rotate(90deg) translateY(-100%);
+}
+
+.textLayer[data-main-rotation='180'] {
+  transform: rotate(180deg) translate(-100%, -100%);
+}
+
+.textLayer[data-main-rotation='270'] {
+  transform: rotate(270deg) translateX(-100%);
+}
+
+/* -------------------------------------------------------------- annotations */
+
+.layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+}
+
+.anno {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.anno.active {
+  outline: 1px dashed rgb(59 130 246 / 90%);
+  outline-offset: 2px;
+}
+
+.anno .remove {
+  position: absolute;
+  top: -11px;
+  right: -11px;
+  width: 20px;
+  height: 20px;
+  min-width: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s;
+  pointer-events: auto;
+  z-index: 2;
+}
+
+.anno:hover .remove,
+.anno.active .remove {
+  opacity: 1;
+}
+
+.handle {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  margin: -5.5px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 0.12s;
+  pointer-events: auto;
+  cursor: crosshair;
+  z-index: 2;
+}
+
+.anno:hover .handle,
+.anno.active .handle {
+  opacity: 1;
+}
+
+.handle-nw {
+  left: 0;
+  top: 0;
+  cursor: nwse-resize;
+}
+
+.handle-ne {
+  left: 100%;
+  top: 0;
+  cursor: nesw-resize;
+}
+
+.handle-sw {
+  left: 0;
+  top: 100%;
+  cursor: nesw-resize;
+}
+
+.handle-se {
+  left: 100%;
+  top: 100%;
+  cursor: nwse-resize;
+}
+
+/* text */
+
+.anno-text {
+  line-height: 1.2;
+  white-space: pre;
+  cursor: default;
+}
+
+.anno-text .content {
+  min-width: 6px;
+  min-height: 1.2em;
+  outline: none;
+  white-space: pre;
+  caret-color: currentColor;
+}
+
+.anno-text .grip {
+  position: absolute;
+  top: -11px;
+  left: -11px;
+  width: 20px;
+  height: 20px;
+  min-width: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  cursor: move;
+  opacity: 0;
+  transition: opacity 0.12s;
+  z-index: 2;
+}
+
+.anno-text:hover .grip,
+.anno-text.active .grip {
+  opacity: 1;
+}
+
+/* boxes */
+
+.anno-box,
+.anno-image {
+  cursor: move;
+}
+
+.anno-box .body {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.anno-image img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* lines */
+
+.anno-line {
+  pointer-events: none;
+}
+
+.anno-line svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.anno-line .hit {
+  stroke: transparent;
+  stroke-width: 16;
+  pointer-events: stroke;
+  cursor: move;
+}
+
+/* marks */
+
+.anno-mark {
+  cursor: move;
+}
+
+.anno-mark svg {
+  position: absolute;
+  inset: 0;
+  fill: none;
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------------ overlay */
+
+#overlay {
+  position: fixed;
+  inset: var(--chrome-height) 0 0;
+  z-index: 15;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: var(--backdrop);
+  text-align: center;
+  padding: 24px;
+}
+
+#overlay.show {
+  display: flex;
+}
+
+.overlay-card {
+  max-width: 560px;
+}
+
+#overlay h1 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+#overlay p {
+  color: var(--muted);
+  margin: 0 0 20px;
+  word-break: break-word;
+}
+
+#dropTarget {
+  padding: 40px;
+  border: 2px dashed var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+body.dragging #dropTarget {
+  border-color: var(--accent);
+  color: var(--text);
+  background: rgb(59 130 246 / 10%);
+}
+
+body.dragging::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  border: 3px solid var(--accent);
+  pointer-events: none;
+}
+
+/* -------------------------------------------------------------------- modal */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 55%);
+}
+
+.modal-card {
+  width: 340px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--chrome);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 55%);
+}
+
+.modal-card.card-wide {
+  width: 580px;
+}
+
+.modal-card h2 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 14px;
+}
+
+.modal-card input[type='password'] {
+  width: 100%;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.error-text {
+  color: #fca5a5;
+}
+
+/* ------------------------------------------------------- signature dialog */
+
+.segmented {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--chrome-2);
+}
+
+.seg {
+  flex: 1;
+  height: 30px;
+}
+
+.seg.selected {
+  background: var(--accent);
+  color: #fff;
+}
+
+.sign-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+/* White, because that is the paper it is going onto. */
+.sign-pad {
+  display: block;
+  width: 100%;
+  height: 180px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: #fff;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.sign-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  height: 150px;
+  border: 2px dashed var(--line);
+  border-radius: 10px;
+}
+
+.sign-drop:hover,
+.sign-drop.over {
+  border-color: var(--accent);
+  background: rgb(59 130 246 / 10%);
+}
+
+/* Chequerboard so removed background reads as transparent, not as white ink. */
+.sign-preview {
+  display: block;
+  width: 100%;
+  height: 150px;
+  object-fit: contain;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: repeating-conic-gradient(#e9ecf1 0% 25%, #ffffff 0% 50%) 0 0 / 16px 16px;
+}
+
+/* ------------------------------------------------------------------- status */
+
+#status {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  z-index: 45;
+  transform: translate(-50%, 14px);
+  max-width: 70vw;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: #12141a;
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+#status.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+#status.error {
+  border-color: var(--danger);
+  color: #fecaca;
+}

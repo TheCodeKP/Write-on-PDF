@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Write on PDF</title>
+  <link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+  <svg class="sprite" aria-hidden="true">
+    <symbol id="i-open" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V5h4M20 9V5h-4M4 15v4h4M20 15v4h-4"/></symbol>
+    <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 4v5h-5"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></symbol>
+    <symbol id="i-select" viewBox="0 0 24 24"><path d="m5 3 14 8-6 1.6L10.4 19z"/></symbol>
+    <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></symbol>
+    <symbol id="i-highlight" viewBox="0 0 24 24"><path d="m14 3 7 7-8 8H8l-3-3z"/><path d="M4 21h16"/></symbol>
+    <symbol id="i-rect" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1"/></symbol>
+    <symbol id="i-ellipse" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8" ry="6"/></symbol>
+    <symbol id="i-line" viewBox="0 0 24 24"><path d="M5 19 19 5"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 19 19 5M11 5h8v8"/></symbol>
+    <symbol id="i-tick" viewBox="0 0 24 24"><path d="m4 13 5 5L20 6"/></symbol>
+    <symbol id="i-cross" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-stamp" viewBox="0 0 24 24"><path d="M3 19c3 0 4-2 6-6s3-8 5-8 2 3 0 6-5 5-5 8 2 2 4 1"/><path d="M4 21h16"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M4 8h10a5 5 0 0 1 0 10H8M4 8l4-4M4 8l4 4"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path d="M20 8H10a5 5 0 0 0 0 10h6M20 8l-4-4M20 8l-4 4"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M12 3v12M7 11l5 5 5-5M4 20h16"/></symbol>
+    <symbol id="i-print" viewBox="0 0 24 24"><path d="M7 9V3h10v6M7 18H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 15h10v6H7z"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="m6 14 6-6 6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 10 6 6 6-6"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-chrome" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/><path d="M12 8.5H21M8.9 13.8 4.4 21M15.1 13.8l-4.6 7.6"/></symbol>
+  </svg>
+
+  <header id="toolbar">
+    <div class="bar">
+      <button id="openBtn" class="icon" title="Open a PDF from disk"><svg><use href="#i-open"/></svg></button>
+      <span id="fileName" class="filename"></span>
+
+      <span class="sep"></span>
+
+      <button id="zoomOut" class="icon" title="Zoom out (Ctrl+-)"><svg><use href="#i-minus"/></svg></button>
+      <button id="zoomLevel" class="zoom" title="Reset to 100%">100%</button>
+      <button id="zoomIn" class="icon" title="Zoom in (Ctrl++)"><svg><use href="#i-plus"/></svg></button>
+      <button id="fitWidth" class="icon" title="Fit to width"><svg><use href="#i-fit"/></svg></button>
+      <button id="rotateBtn" class="icon" title="Rotate view 90&deg; (R)"><svg><use href="#i-rotate"/></svg></button>
+
+      <span class="sep"></span>
+
+      <div class="pager">
+        <input type="number" id="pageInput" min="1" value="1" title="Go to page">
+        <span id="pageTotal">/ -</span>
+      </div>
+
+      <button id="findBtn" class="icon" title="Find in document (Ctrl+F)"><svg><use href="#i-search"/></svg></button>
+
+      <span class="spacer"></span>
+
+      <button id="chromeViewerBtn" class="icon" title="Open in Chrome's own viewer" hidden><svg><use href="#i-chrome"/></svg></button>
+      <button id="saveBtn" title="Download a copy with your notes baked in"><svg><use href="#i-save"/></svg>Save</button>
+      <button id="printBtn" class="primary" title="Print with your notes baked in (Ctrl+P)"><svg><use href="#i-print"/></svg>Print</button>
+    </div>
+
+    <div class="bar bar-tools">
+      <div class="tools" role="toolbar" aria-label="Annotation tools">
+        <button class="tool icon" data-tool="select" title="Select and edit (V)"><svg><use href="#i-select"/></svg></button>
+        <button class="tool icon" data-tool="text" title="Type text (T)"><svg><use href="#i-text"/></svg></button>
+        <button class="tool icon" data-tool="highlight" title="Highlighter (H)"><svg><use href="#i-highlight"/></svg></button>
+        <button class="tool icon" data-tool="rect" title="Rectangle (B)"><svg><use href="#i-rect"/></svg></button>
+        <button class="tool icon" data-tool="ellipse" title="Ellipse (O)"><svg><use href="#i-ellipse"/></svg></button>
+        <button class="tool icon" data-tool="line" title="Line (L)"><svg><use href="#i-line"/></svg></button>
+        <button class="tool icon" data-tool="arrow" title="Arrow (A)"><svg><use href="#i-arrow"/></svg></button>
+        <button class="tool icon" data-tool="tick" title="Tick mark (K)"><svg><use href="#i-tick"/></svg></button>
+        <button class="tool icon" data-tool="cross" title="Cross mark (X)"><svg><use href="#i-cross"/></svg></button>
+        <button class="tool icon" data-tool="stamp" title="Signature or stamp (S)"><svg><use href="#i-stamp"/></svg></button>
+      </div>
+
+      <span class="sep"></span>
+
+      <div class="options" id="textOpts">
+        <select id="fontFamily" title="Font">
+          <option value="helvetica">Helvetica</option>
+          <option value="times">Times</option>
+          <option value="courier">Courier</option>
+        </select>
+        <input type="number" id="fontSize" min="4" max="96" step="1" value="12" title="Font size in points">
+        <button id="boldBtn" class="icon toggle" aria-pressed="false" title="Bold (Ctrl+B)"><b>B</b></button>
+        <button id="italicBtn" class="icon toggle" aria-pressed="false" title="Italic (Ctrl+I)"><i>I</i></button>
+        <button id="underlineBtn" class="icon toggle" aria-pressed="false" title="Underline (Ctrl+U)"><u>U</u></button>
+        <button id="strikeBtn" class="icon toggle" aria-pressed="false" title="Strikethrough"><s>S</s></button>
+        <label class="swatch" title="Text colour">
+          <input type="color" id="colorPicker" value="#d0021b">
+        </label>
+        <label class="swatch" title="Text background" id="bgSwatch">
+          <input type="color" id="bgPicker" value="#ffff00">
+          <button id="bgClear" class="mini" title="No background">&#8709;</button>
+        </label>
+      </div>
+
+      <div class="options" id="shapeOpts" hidden>
+        <label class="swatch" title="Colour">
+          <input type="color" id="shapeColor" value="#d0021b">
+        </label>
+        <label class="field" id="thicknessField" title="Line thickness">
+          <span>Thickness</span>
+          <input type="range" id="strokeWidth" min="0.5" max="8" step="0.5" value="1.5">
+        </label>
+        <span id="shapeHint" class="hint"></span>
+      </div>
+
+      <div class="options" id="markOpts" hidden>
+        <label class="swatch" title="Colour">
+          <input type="color" id="markColor" value="#2e9e4f">
+        </label>
+        <label class="field" title="Mark size">
+          <span>Size</span>
+          <input type="range" id="markSize" min="8" max="72" step="1" value="18">
+        </label>
+      </div>
+
+      <div class="options" id="stampOpts" hidden>
+        <div id="stampStrip" class="stamp-strip"></div>
+        <button id="stampAdd"><svg><use href="#i-plus"/></svg>Add signature</button>
+        <label class="field" id="stampSizeField" title="How wide it lands on the page">
+          <span>Size</span>
+          <input type="range" id="stampSize" min="0.06" max="0.6" step="0.01" value="0.24">
+        </label>
+        <span id="stampHint" class="hint"></span>
+      </div>
+
+      <span class="spacer"></span>
+
+      <button id="undoBtn" class="icon" title="Undo (Ctrl+Z)" disabled><svg><use href="#i-undo"/></svg></button>
+      <button id="redoBtn" class="icon" title="Redo (Ctrl+Shift+Z)" disabled><svg><use href="#i-redo"/></svg></button>
+      <button id="deleteBtn" class="icon" title="Delete selected (Del)" disabled><svg><use href="#i-trash"/></svg></button>
+      <button id="clearBtn" class="danger" title="Remove every annotation from this document" disabled>Clear all</button>
+    </div>
+
+    <div id="progress"><div id="progressBar"></div></div>
+  </header>
+
+  <div id="findBar" hidden>
+    <svg class="find-icon"><use href="#i-search"/></svg>
+    <input type="text" id="findInput" placeholder="Find in document" autocomplete="off" spellcheck="false">
+    <span id="findCount" class="hint">&nbsp;</span>
+    <label class="check" title="Match case"><input type="checkbox" id="findCase">Aa</label>
+    <button id="findPrev" class="icon" title="Previous (Shift+Enter)"><svg><use href="#i-up"/></svg></button>
+    <button id="findNext" class="icon" title="Next (Enter)"><svg><use href="#i-down"/></svg></button>
+    <button id="findClose" class="icon" title="Close (Esc)"><svg><use href="#i-close"/></svg></button>
+  </div>
+
+  <div id="signDialog" class="modal" hidden>
+    <div class="modal-card card-wide">
+      <h2>Add a signature</h2>
+
+      <div class="segmented">
+        <button type="button" class="seg selected" data-mode="draw">Draw it</button>
+        <button type="button" class="seg" data-mode="upload">Use an image</button>
+      </div>
+
+      <div id="signDraw">
+        <canvas id="signPad" class="sign-pad" width="1120" height="360"></canvas>
+        <div class="sign-row">
+          <span class="hint">Sign with your mouse, trackpad or touchscreen.</span>
+          <button type="button" id="signClear">Clear</button>
+        </div>
+      </div>
+
+      <div id="signUpload" hidden>
+        <button type="button" id="signDrop" class="sign-drop">
+          <strong>Choose an image</strong>
+          <span class="hint">or drop a PNG, JPEG or WebP here</span>
+        </button>
+
+        <div id="signResult" hidden>
+          <img id="signPreview" class="sign-preview" alt="Signature preview">
+          <div class="sign-row">
+            <label class="check">
+              <input type="checkbox" id="signDropBg" checked>Remove the paper background
+            </label>
+            <button type="button" id="signRechoose">Pick another</button>
+          </div>
+        </div>
+      </div>
+
+      <p id="signError" class="hint error-text" hidden></p>
+
+      <div class="modal-actions">
+        <button type="button" id="signCancel">Cancel</button>
+        <button type="button" id="signSave" class="primary" disabled>Save signature</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="scroller">
+    <div id="pages"></div>
+  </div>
+
+  <div id="overlay" class="show">
+    <div class="overlay-card">
+      <h1 id="overlayTitle">Open a PDF</h1>
+      <p id="overlayText">Drop a PDF anywhere on this window, or use the Open button above.</p>
+      <div id="dropTarget">Drop PDF here</div>
+    </div>
+  </div>
+
+  <div id="passwordModal" class="modal" hidden>
+    <form class="modal-card" id="passwordForm">
+      <h2 id="passwordTitle">This PDF is password protected</h2>
+      <input type="password" id="passwordInput" placeholder="Password" autocomplete="off">
+      <div class="modal-actions">
+        <button type="button" id="passwordCancel">Cancel</button>
+        <button type="submit" class="primary">Unlock</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="status"></div>
+
+  <input type="file" id="filePicker" accept="application/pdf,.pdf" hidden>
+  <input type="file" id="imagePicker" accept="image/png,image/jpeg,image/webp" hidden>
+
+  <script src="../vendor/pdf-lib.min.js"></script>
+  <script type="module" src="viewer.js"></script>
+</body>
+</html>
