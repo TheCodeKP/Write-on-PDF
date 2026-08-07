@@ -20,12 +20,13 @@ export async function listStamps() {
   return Array.isArray(stamps) ? stamps : [];
 }
 
-export async function saveStamp({ name, dataUrl, aspect }) {
+export async function saveStamp({ name, dataUrl, aspect, kind = 'signature' }) {
   const stamp = {
     id: crypto.randomUUID(),
-    name: name?.trim() || 'Signature',
+    name: name?.trim() || (kind === 'image' ? 'Image' : 'Signature'),
     dataUrl,
     aspect,
+    kind: kind === 'image' ? 'image' : 'signature',
     added: Date.now(),
   };
 

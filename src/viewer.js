@@ -53,6 +53,7 @@ const TOOL_KEYS = {
   k: 'tick',
   x: 'cross',
   s: 'stamp',
+  i: 'image',
 };
 
 const el = {};
@@ -746,6 +747,11 @@ function wireTools() {
   }
   selectTool('select');
 
+  el.highlightSelectTip.addEventListener('click', () => {
+    selectTool('select');
+    flash('Drag across words on the page, then press Highlight, U or S.');
+  });
+
   el.fontFamily.addEventListener('change', () => {
     style({ font: el.fontFamily.value });
     syncFontControls(el.fontFamily.value);
@@ -778,6 +784,15 @@ function wireTools() {
 
   el.shapeColor.addEventListener('input', () => style({ color: el.shapeColor.value }));
   el.strokeWidth.addEventListener('input', () => style({ strokeWidth: Number(el.strokeWidth.value) }));
+  el.highlightOpacity.addEventListener('input', () => {
+    style({ opacity: Number(el.highlightOpacity.value) });
+  });
+  el.fillPicker.addEventListener('input', () => style({ fill: el.fillPicker.value }));
+  el.fillClear.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    style({ fill: null });
+  });
 
   el.markColor.addEventListener('input', () => style({ color: el.markColor.value }));
   el.markSize.addEventListener('input', () => style({ sizePt: Number(el.markSize.value) }));
@@ -860,6 +875,7 @@ function style(patch) {
   annotations.applyStyle(patch);
   syncColourInputs();
   if ('background' in patch) syncBgSwatch(patch.background);
+  if ('fill' in patch) syncFillSwatch(patch.fill);
   saveStylePrefs();
 }
 
@@ -876,6 +892,17 @@ function syncBgSwatch(background) {
   if (background) el.bgPicker.value = background;
 }
 
+function syncFillSwatch(fill) {
+  const none = !fill;
+  el.fillSwatch.classList.toggle('is-none', none);
+  el.fillSwatch.title = none
+    ? 'Fill (none). Click to add a fill'
+    : 'Fill colour';
+  el.fillClear.setAttribute('aria-pressed', String(none));
+  el.fillClear.title = none ? 'No fill (current)' : 'Clear fill';
+  if (fill) el.fillPicker.value = fill;
+}
+
 function selectTool(tool) {
   // The bar acts on selected words, and only Select can select them.
   if (tool !== 'select') hideSelectionBar();
@@ -888,6 +915,17 @@ function selectTool(tool) {
   // Select may keep the annotation selected for styling, but not the
   // contenteditable focus that paints the blue text selection.
   annotations.endTextEditing();
+
+  // Keep the active chip matched to the tool in hand, so the ghost preview is
+  // a signature under Signature and a photo under Image.
+  if (tool === 'stamp' || tool === 'image') {
+    const active = annotations.stampIndex.get(annotations.activeStampId);
+    const match = tool === 'image' ? isImageStamp : isSignatureStamp;
+    if (!match(active)) {
+      const first = [...annotations.stampIndex.values()].find(match);
+      annotations.setActiveStamp(first?.id || null);
+    }
+  }
 
   // A drawing tool needs its own options row (signature strip, thickness, …).
   // Keeping a prior selection used to leave shapeOpts up while the signature
@@ -913,9 +951,11 @@ function showOptionsFor(tool) {
         ? 'markOpts'
         : tool === 'stamp'
           ? 'stampOpts'
-          : tool === 'select'
-            ? null
-            : 'shapeOpts';
+          : tool === 'image'
+            ? 'imageOpts'
+            : tool === 'select'
+              ? null
+              : 'shapeOpts';
 
   // Select prefers the text align controls when this page has notes to line
   // up; otherwise the signature strip stays reachable without a trip back to
@@ -927,25 +967,49 @@ function showOptionsFor(tool) {
     group = 'stampOpts';
   }
 
-  for (const id of ['textOpts', 'shapeOpts', 'markOpts', 'stampOpts']) {
+  for (const id of ['textOpts', 'shapeOpts', 'markOpts', 'stampOpts', 'imageOpts']) {
     el[id].hidden = id !== group;
   }
 
   // A highlight is a filled band with no border, so thickness would do nothing.
-  // It is also the one shape that has to be dragged, which is worth saying.
+  // Rect and ellipse can take an interior fill; lines and ink cannot.
   const highlighting = tool === 'highlight';
+  const canFill = tool === 'rect' || tool === 'ellipse';
   el.thicknessField.hidden = highlighting;
-  el.shapeHint.textContent = highlighting ? 'Drag across what you want to highlight' : '';
+  el.opacityField.hidden = !highlighting;
+  el.fillSwatch.hidden = !canFill;
+  el.highlightSelectTip.hidden = !highlighting;
+  el.shapeHint.textContent = highlighting
+    ? 'Drag across a line, or select words on the page then Highlight'
+    : '';
   el.textHint.textContent =
     tool === 'textbox'
       ? 'Drag out a box, then type'
       : tool === 'text'
         ? 'Clicks near a column snap to it'
         : tool === 'select'
-          ? 'Drag a box over notes to select and align'
+          ? 'Select words to highlight, or drag a box over notes to align'
           : '';
 
+  if (highlighting) {
+    el.highlightOpacity.value = String(
+      annotations.selected?.shape === 'highlight'
+        ? annotations.selected.opacity ?? annotations.style.opacity
+        : annotations.style.opacity
+    );
+  }
+  if (canFill) {
+    const fill =
+      annotations.selected &&
+      (annotations.selected.shape === 'rect' || annotations.selected.shape === 'ellipse')
+        ? annotations.selected.fill
+        : annotations.style.fill;
+    syncFillSwatch(fill || null);
+  }
+
   syncTextAlignGroup();
+  updateStampHint();
+  updateImageHint();
 }
 
 function onSelectionChanged(record) {
@@ -955,11 +1019,14 @@ function onSelectionChanged(record) {
     // The slider was showing whatever was selected; hand it back to the size
     // the next signature will be placed at.
     el.stampSize.value = String(annotations.style.stampWidth);
+    el.imageSize.value = String(annotations.style.stampWidth);
     syncLockAspectBtn(null);
     syncBgSwatch(annotations.style.background);
+    syncFillSwatch(annotations.style.fill);
     syncAlignGroup();
     syncTextAlignGroup();
     updateStampHint();
+    updateImageHint();
     return;
   }
 
@@ -969,10 +1036,14 @@ function onSelectionChanged(record) {
       : record.kind === 'mark'
         ? 'tick'
         : record.kind === 'image'
-          ? 'stamp'
+          ? imageOptionsGroup(record)
           : record.shape === 'highlight'
             ? 'highlight'
-            : 'rect';
+            : record.shape === 'ellipse'
+              ? 'ellipse'
+              : record.shape === 'band' || record.kind === 'line' || record.kind === 'ink'
+                ? 'line'
+                : 'rect';
   showOptionsFor(group);
 
   if (record.kind === 'text') {
@@ -990,19 +1061,37 @@ function onSelectionChanged(record) {
     el.markSize.value = String(record.sizePt);
   } else if (record.kind === 'image') {
     el.stampSize.value = String(record.wRatio);
+    el.imageSize.value = String(record.wRatio);
     syncLockAspectBtn(record);
-    updateStampHint(
+    const lockMsg =
       record.lockAspect === false
         ? 'Aspect unlocked: corners stretch freely'
-        : 'Aspect locked: corners scale evenly'
-    );
+        : 'Aspect locked: corners scale evenly';
+    updateStampHint(lockMsg);
+    updateImageHint(lockMsg);
   } else if (record.kind === 'box' || record.kind === 'line' || record.kind === 'ink') {
     el.shapeColor.value = record.color;
-    el.strokeWidth.value = String(record.strokeWidth);
+    el.strokeWidth.value = String(record.strokeWidth ?? annotations.style.strokeWidth);
+    if (record.shape === 'highlight') {
+      el.highlightOpacity.value = String(record.opacity ?? 0.35);
+    }
+    if (record.shape === 'rect' || record.shape === 'ellipse') {
+      syncFillSwatch(record.fill || null);
+    }
   }
 
   syncAlignGroup();
   syncTextAlignGroup();
+}
+
+// Saved signatures and saved photos share kind "image" on the page. Prefer the
+// Image options when the active stamp is a photo, otherwise the Signature row.
+function imageOptionsGroup(record) {
+  const stamp = annotations.stampIndex.get(record.stampId);
+  if (stamp?.kind === 'image') return 'image';
+  if (stamp && isSignatureStamp(stamp)) return 'stamp';
+  if (annotations.tool === 'stamp') return 'stamp';
+  return 'image';
 }
 
 // Align is meaningless for one note. Keep the strip clear until a multi-select
@@ -1059,13 +1148,30 @@ function syncColourInputs() {
 
 // --------------------------------------------------------------------- stamps
 
+function isSignatureStamp(stamp) {
+  return !stamp?.kind || stamp.kind === 'signature';
+}
+
+function isImageStamp(stamp) {
+  return stamp?.kind === 'image';
+}
+
 function wireStamps() {
   el.stampAdd.addEventListener('click', openSignDialog);
   el.imageAdd.addEventListener('click', () => el.photoPicker.click());
   el.photoPicker.addEventListener('change', onPhotoPicked);
-  el.lockAspectBtn.addEventListener('click', toggleLockAspect);
+  el.stampLockBtn.addEventListener('click', toggleLockAspect);
+  el.imageLockBtn.addEventListener('click', toggleLockAspect);
   el.stampSize.addEventListener('input', () => {
-    annotations.applyStyle({ stampWidth: Number(el.stampSize.value) });
+    const stampWidth = Number(el.stampSize.value);
+    el.imageSize.value = String(stampWidth);
+    annotations.applyStyle({ stampWidth });
+    saveStylePrefs();
+  });
+  el.imageSize.addEventListener('input', () => {
+    const stampWidth = Number(el.imageSize.value);
+    el.stampSize.value = String(stampWidth);
+    annotations.applyStyle({ stampWidth });
     saveStylePrefs();
   });
 
@@ -1100,6 +1206,7 @@ async function onPhotoPicked() {
     name: (file.name || 'Image').replace(/\.[^.]+$/, '') || 'Image',
     dataUrl: built.dataUrl,
     aspect: built.aspect,
+    kind: 'image',
   };
 
   if (keep) {
@@ -1107,6 +1214,7 @@ async function onPhotoPicked() {
       name: stamp.name,
       dataUrl: stamp.dataUrl,
       aspect: stamp.aspect,
+      kind: 'image',
     });
     await refreshStamps(stamp.id);
   } else {
@@ -1116,8 +1224,8 @@ async function onPhotoPicked() {
   }
 
   annotations.deselect();
-  selectTool('stamp');
-  updateStampHint('Click the page to place it');
+  selectTool('image');
+  updateImageHint('Click the page to place it');
   flash(keep ? 'Image ready. Click the page to place it (kept in strip).' : 'Image ready. Click the page to place it.');
 }
 
@@ -1127,23 +1235,26 @@ function toggleLockAspect() {
   const next = record.lockAspect === false;
   annotations.setLockAspect(next);
   syncLockAspectBtn(annotations.selected);
-  updateStampHint(
-    next ? 'Aspect locked: corners scale evenly' : 'Aspect unlocked: corners stretch freely'
-  );
+  const message = next
+    ? 'Aspect locked: corners scale evenly'
+    : 'Aspect unlocked: corners stretch freely';
+  updateStampHint(message);
+  updateImageHint(message);
 }
 
 function syncLockAspectBtn(record) {
   const image = record?.kind === 'image';
-  el.lockAspectBtn.hidden = !image;
-  if (!image) return;
-  const locked = record.lockAspect !== false;
-  el.lockAspectBtn.setAttribute('aria-pressed', String(locked));
-  el.lockAspectBtn.title = locked ? 'Unlock aspect ratio' : 'Lock aspect ratio';
+  for (const button of [el.stampLockBtn, el.imageLockBtn]) {
+    button.hidden = !image;
+    if (!image) continue;
+    const locked = record.lockAspect !== false;
+    button.setAttribute('aria-pressed', String(locked));
+    button.title = locked ? 'Unlock aspect ratio' : 'Lock aspect ratio';
+  }
 }
 
-// Saved signatures sit right in the toolbar as thumbnails rather than behind a
-// menu, so choosing one is a single click and the current choice is always in
-// view next to the tool that uses it.
+// Saved signatures and images sit in their own strips next to the tool that
+// uses them, so choosing one is a single click.
 async function refreshStamps(selectId) {
   const stamps = await listStamps();
   annotations.setStamps(stamps);
@@ -1153,7 +1264,25 @@ async function refreshStamps(selectId) {
     annotations.setActiveStamp(stamps[0]?.id || null);
   }
 
-  el.stampStrip.textContent = '';
+  fillStampStrip(
+    el.stampStrip,
+    stamps.filter(isSignatureStamp),
+    'stamp',
+    updateStampHint
+  );
+  fillStampStrip(
+    el.imageStrip,
+    stamps.filter(isImageStamp),
+    'image',
+    updateImageHint
+  );
+
+  updateStampHint();
+  updateImageHint();
+}
+
+function fillStampStrip(strip, stamps, placeTool, hint) {
+  strip.textContent = '';
 
   for (const stamp of stamps) {
     const chip = document.createElement('button');
@@ -1174,7 +1303,7 @@ async function refreshStamps(selectId) {
     drop.addEventListener('click', async (event) => {
       event.stopPropagation();
 
-      // Deleting a signature that is already on the page would otherwise leave
+      // Deleting a stamp that is already on the page would otherwise leave
       // invisible empty boxes behind, so those go with it.
       const placed = annotations.serialize().filter((record) => record.stampId === stamp.id);
       if (placed.length) {
@@ -1197,21 +1326,17 @@ async function refreshStamps(selectId) {
     chip.appendChild(drop);
 
     chip.addEventListener('click', () => {
-      // Either way in: Signature tool then chip, or chip first. Without taking
-      // the tool, a click on the page would only clear the selection.
       annotations.setActiveStamp(stamp.id);
       annotations.deselect();
-      selectTool('stamp');
-      for (const other of el.stampStrip.children) other.classList.remove('selected');
+      selectTool(placeTool);
+      for (const other of strip.children) other.classList.remove('selected');
       chip.classList.add('selected');
-      updateStampHint();
+      hint();
     });
     chip.title = `Place "${stamp.name}"`;
 
-    el.stampStrip.appendChild(chip);
+    strip.appendChild(chip);
   }
-
-  updateStampHint();
 }
 
 function updateStampHint(message) {
@@ -1219,13 +1344,37 @@ function updateStampHint(message) {
     el.stampHint.textContent = message;
     return;
   }
-  const hasStamps = annotations.stampIndex.size > 0;
-  const imageSelected = annotations.selected?.kind === 'image';
-  el.stampHint.textContent = hasStamps
+  const signatures = [...annotations.stampIndex.values()].filter(isSignatureStamp);
+  const imageSelected =
+    annotations.selected?.kind === 'image' &&
+    isSignatureStamp(annotations.stampIndex.get(annotations.selected.stampId));
+  el.stampHint.textContent = signatures.length
     ? 'Click the page to place it'
-    : 'Add a signature or an image';
-  el.stampSizeField.hidden = !hasStamps && !imageSelected;
-  if (!imageSelected) syncLockAspectBtn(null);
+    : 'Add a signature to place it on the page';
+  el.stampSizeField.hidden = !signatures.length && !imageSelected;
+  if (!annotations.selected || annotations.selected.kind !== 'image') {
+    el.stampLockBtn.hidden = true;
+  }
+}
+
+function updateImageHint(message) {
+  if (message) {
+    el.imageHint.textContent = message;
+    return;
+  }
+  const images = [...annotations.stampIndex.values()].filter(isImageStamp);
+  const active = annotations.stampIndex.get(annotations.activeStampId);
+  const ready = isImageStamp(active) || images.length > 0;
+  const imageSelected =
+    annotations.selected?.kind === 'image' &&
+    isImageStamp(annotations.stampIndex.get(annotations.selected.stampId));
+  el.imageHint.textContent = ready
+    ? 'Click the page to place it'
+    : 'Choose an image, then click the page to place it';
+  el.imageSizeField.hidden = !ready && !imageSelected;
+  if (!annotations.selected || annotations.selected.kind !== 'image') {
+    el.imageLockBtn.hidden = true;
+  }
 }
 
 // ------------------------------------------------------------ sign dialog
@@ -1369,6 +1518,7 @@ async function saveSignature() {
     name: signMode === 'draw' ? 'Signature' : signName,
     dataUrl: built.dataUrl,
     aspect: built.aspect,
+    kind: 'signature',
   });
 
   closeSignDialog();
@@ -1840,6 +1990,32 @@ function wireKeyboard() {
         }
         return;
       }
+      // Annotation copy only when something on the layer is selected. Otherwise
+      // the browser keeps Ctrl+C for PDF text selection and for letters inside
+      // a text box (those paths never reach here: typing short-circuits above
+      // for the letter case, and an empty annotation selection falls through).
+      if (key === 'c' && !typing) {
+        const count = annotations.copySelected();
+        if (!count) return;
+        event.preventDefault();
+        flash(count === 1 ? 'Copied.' : `${count} annotations copied.`);
+        return;
+      }
+      if (key === 'x' && !typing) {
+        const count = annotations.cutSelected();
+        if (!count) return;
+        event.preventDefault();
+        flash(count === 1 ? 'Cut.' : `${count} annotations cut.`);
+        return;
+      }
+      if (key === 'v' && !typing) {
+        const count = annotations.pasteClipboard();
+        if (!count) return;
+        event.preventDefault();
+        if (annotations.tool !== 'select') selectTool('select');
+        flash(count === 1 ? 'Pasted.' : `${count} annotations pasted.`);
+        return;
+      }
       // Annotation history wins over the browser's contenteditable undo. With the
       // caret in a text box, native Ctrl+Z often looked broken (empty undo stack
       // or only one keystroke) while the same shortcut worked once the box only
@@ -2084,13 +2260,11 @@ async function restoreStylePrefs() {
   const { annoStyle } = await chrome.storage.local.get('annoStyle');
   if (!annoStyle) {
     syncBgSwatch(annotations.style.background || null);
+    syncFillSwatch(annotations.style.fill || null);
     return;
   }
 
-  // Highlighter opacity no longer has a control, so a value saved back when it
-  // did must not stick: it would leave highlights wrong with no way to fix them.
-  const { opacity, ...restorable } = annoStyle;
-  annotations.applyStyle(restorable);
+  annotations.applyStyle(annoStyle);
   el.fontFamily.value = annoStyle.font ?? 'helvetica';
   el.fontSize.value = String(annoStyle.fontPt ?? 12);
   el.boldBtn.setAttribute('aria-pressed', String(Boolean(annoStyle.bold)));
@@ -2098,9 +2272,12 @@ async function restoreStylePrefs() {
   el.underlineBtn.setAttribute('aria-pressed', String(Boolean(annoStyle.underline)));
   el.strikeBtn.setAttribute('aria-pressed', String(Boolean(annoStyle.strike)));
   el.strokeWidth.value = String(annoStyle.strokeWidth ?? 1.5);
+  el.highlightOpacity.value = String(annoStyle.opacity ?? 0.35);
   el.markSize.value = String(annoStyle.sizePt ?? 18);
   el.stampSize.value = String(annoStyle.stampWidth ?? 0.24);
+  el.imageSize.value = String(annoStyle.stampWidth ?? 0.24);
   syncBgSwatch(annoStyle.background || null);
+  syncFillSwatch(annoStyle.fill || null);
   syncColourInputs();
   syncFontControls(el.fontFamily.value);
 }

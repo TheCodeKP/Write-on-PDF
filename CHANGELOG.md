@@ -23,6 +23,18 @@ Builds a full annotation toolkit on top of the 1.0 typing and highlighting.
 - A keyboard shortcut reference.
 - Tab inside a text box inserts an indent instead of moving focus out of the
   box. Saved files render it as four spaces.
+- Copy, cut and paste for selected annotations (Ctrl+C / Ctrl+X / Ctrl+V),
+  including text notes, shapes, lines, ink, marks and images.
+- Clicking a text note selects it; double-click to type. A new note still
+  opens ready to type.
+- Rectangle, ellipse, line and arrow only appear when dragged out. A plain
+  click no longer drops a default-sized shape.
+- Image is its own toolbar tool (I), separate from Signature. Signature keeps
+  draw, upload and paper-background removal; Image places a photo as-is.
+- Highlighter tip points to the Select-words path (highlight, underline, strike).
+- Thickness on a selected underline or strike changes the line weight.
+- Highlight opacity is adjustable. Rectangles and ellipses can take a fill
+  colour as well as a stroke.
 
 ### Changed
 

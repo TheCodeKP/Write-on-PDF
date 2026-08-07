@@ -218,6 +218,22 @@ button.icon {
   width: var(--control-size);
 }
 
+/* Quiet text control for tips in the options row, not another heavy tool button. */
+button.text-action {
+  height: auto;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+button.text-action:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
 button svg {
   width: var(--icon-size);
   height: var(--icon-size);
@@ -321,9 +337,10 @@ button.mini {
   z-index: 2;
 }
 
-/* Background is off: the native colour well still holds a remembered hue, so
-   a slash + checker wash covers it. Otherwise it looks like yellow is applied. */
-#bgSwatch.is-none::before {
+/* Background / fill is off: the native colour well still holds a remembered hue,
+   so a slash + checker wash covers it. Otherwise it looks like a colour is on. */
+#bgSwatch.is-none::before,
+#fillSwatch.is-none::before {
   content: '';
   position: absolute;
   inset: 2px;
@@ -342,7 +359,8 @@ button.mini {
   box-shadow: inset 0 0 0 1px rgb(0 0 0 / 35%);
 }
 
-#bgSwatch.is-none #bgClear {
+#bgSwatch.is-none #bgClear,
+#fillSwatch.is-none #fillClear {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
@@ -893,6 +911,11 @@ select:focus {
   white-space: pre;
   tab-size: 4;
   caret-color: currentColor;
+  cursor: move;
+}
+
+.anno-text.editing .content {
+  cursor: text;
 }
 
 .anno-text .grip {

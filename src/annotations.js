@@ -21,7 +21,7 @@ const TEXT_COLUMN_SNAP = 0.028;
 
 // Tools that put their mark down on the press. Everything else is drawn out by
 // dragging, so it has a release to wait for before it knows what was meant.
-const STAMPING_TOOLS = new Set(['text', 'tick', 'cross', 'stamp']);
+const STAMPING_TOOLS = new Set(['text', 'tick', 'cross', 'stamp', 'image']);
 
 // A tool picks up its own kind of mark and passes straight through everything
 // else. Picking up whatever the press happened to land on sounds friendlier
@@ -37,6 +37,7 @@ const PICKS_UP = {
   tick: (record) => record.kind === 'mark',
   cross: (record) => record.kind === 'mark',
   stamp: (record) => record.kind === 'image',
+  image: (record) => record.kind === 'image',
   rect: isOutline,
   ellipse: isOutline,
   highlight: (record) =>
@@ -57,20 +58,17 @@ const MIN_INK_RATIO = 0.001; // a dead straight stroke still needs a box to live
 // the gesture is almost flat and the raw drag height would be nearly nothing.
 const MIN_HIGHLIGHT_RATIO = 0.018;
 
-// Clicking rather than dragging drops one of these instead. The highlighter is
-// deliberately absent: it is only ever used by dragging across something, so a
-// stray click should leave nothing behind.
+// Clicking rather than dragging drops one of these instead. Shapes, lines and
+// arrows are deliberately absent: they are drawn out, so a stray click should
+// leave nothing behind. The highlighter and the pen are absent for the same
+// reason. Tick and cross are stamping tools and go through STAMPING_TOOLS.
 const DEFAULT_SIZES = {
-  rect: { w: 0.2, h: 0.09 },
-  ellipse: { w: 0.2, h: 0.09 },
-  line: { w: 0.2, h: 0 },
-  arrow: { w: 0.2, h: 0 },
   textbox: { w: 0.32, h: 0.08 },
 };
 
 const STYLE_KEYS = {
   text: ['fontPt', 'font', 'bold', 'italic', 'underline', 'strike', 'color', 'background', 'align'],
-  box: ['color', 'strokeWidth'],
+  box: ['color', 'strokeWidth', 'opacity', 'fill'],
   line: ['color', 'strokeWidth'],
   ink: ['color', 'strokeWidth'],
   mark: ['color', 'sizePt'],
@@ -122,7 +120,8 @@ export class Annotations {
       background: null,
       align: 'left',
       strokeWidth: 1.5,
-      opacity: 0.35, // fixed: what makes the highlighter translucent, no control
+      opacity: 0.35,
+      fill: null, // rect / ellipse interior; null means outline only
       sizePt: 18,
       stampWidth: 0.24, // fraction of the page a placed signature spans
     };
@@ -131,6 +130,10 @@ export class Annotations {
     this.pending = null;
     this.ghost = null;
     this.marquee = null;
+    // Session clipboard for annotations. Not the system clipboard: Ctrl+C while
+    // editing a text box still copies letters, and PDF text selection still
+    // copies through the browser when nothing on the layer is selected.
+    this.clipboard = [];
 
     window.addEventListener('pointermove', (event) => this.#onPointerMove(event));
     window.addEventListener('pointerup', () => this.#onPointerUp());
@@ -227,8 +230,8 @@ export class Annotations {
     return true;
   }
 
-  // Drop an image at a page point (ratios of the page box). Used by Add image
-  // and by the stamp tool's click-to-place path.
+  // Drop an image at a page point (ratios of the page box). Used by the Image
+  // tool and by the Signature tool's click-to-place path.
   placeImage(pageIndex, point, stamp, { lockAspect = true } = {}) {
     if (!stamp?.dataUrl || stamp.aspect == null) return null;
     const page = this.pages.get(pageIndex);
@@ -260,7 +263,9 @@ export class Annotations {
   #trackGhost(event, pageIndex) {
     const stamp = this.stampIndex.get(this.activeStampId);
     const page = this.pages.get(pageIndex);
-    if (this.tool !== 'stamp' || !stamp || !page) return this.#hideGhost();
+    if ((this.tool !== 'stamp' && this.tool !== 'image') || !stamp || !page) {
+      return this.#hideGhost();
+    }
 
     if (!this.ghost) {
       this.ghost = document.createElement('img');
@@ -284,10 +289,33 @@ export class Annotations {
     this.ghost?.remove();
   }
 
+  // The ghost only redraws on pointer move; keep its size honest when the
+  // slider changes while the cursor is still.
+  #syncGhostSize() {
+    if (!this.ghost?.isConnected) return;
+    const stamp = this.stampIndex.get(this.activeStampId);
+    if (!stamp) return;
+
+    let page = null;
+    for (const candidate of this.pages.values()) {
+      if (candidate.layer === this.ghost.parentElement) {
+        page = candidate;
+        break;
+      }
+    }
+    if (!page) return;
+
+    const width = this.style.stampWidth * page.width;
+    const height = width * stamp.aspect;
+    this.ghost.style.width = `${width}px`;
+    this.ghost.style.height = `${height}px`;
+  }
+
   // Applies to every selected annotation when there is a set (marquee / Shift /
   // Ctrl+A), and always updates the defaults used for the next annotation.
   applyStyle(patch) {
     Object.assign(this.style, patch);
+    if (patch.stampWidth != null) this.#syncGhostSize();
 
     const ids = this.selection.size
       ? [...this.selection]
@@ -307,10 +335,31 @@ export class Annotations {
         continue;
       }
 
+      // Underline and strike are filled bands: the visible weight is hRatio, not
+      // a stroked border. Keep that height in step with the thickness control.
+      if (
+        entry.record.kind === 'box' &&
+        entry.record.shape === 'band' &&
+        patch.strokeWidth != null
+      ) {
+        this.#resizeBand(entry, patch.strokeWidth);
+        touched = true;
+        continue;
+      }
+
       const allowed = STYLE_KEYS[entry.record.kind] || [];
       let local = false;
       for (const [key, value] of Object.entries(patch)) {
         if (!allowed.includes(key)) continue;
+        // Opacity only drives the highlighter. Fill only drives outline shapes.
+        if (key === 'opacity' && entry.record.shape !== 'highlight') continue;
+        if (
+          key === 'fill' &&
+          entry.record.shape !== 'rect' &&
+          entry.record.shape !== 'ellipse'
+        ) {
+          continue;
+        }
         entry.record[key] = value;
         local = true;
       }
@@ -335,6 +384,40 @@ export class Annotations {
     this.onChange();
   }
 
+  #resizeBand(entry, strokeWidth) {
+    const next = Number(strokeWidth);
+    if (!Number.isFinite(next) || next <= 0) return;
+
+    const oldH = entry.record.hRatio;
+    const newH = this.#bandThicknessRatio(entry.record.pageIndex, next);
+    entry.record.strokeWidth = next;
+    entry.record.hRatio = newH;
+    // Grow and shrink around the centre so underline and strike stay on the
+    // letters instead of creeping down the page.
+    entry.record.yRatio = clamp(entry.record.yRatio + (oldH - newH) / 2);
+
+    this.#paint(entry);
+    this.onChange();
+  }
+
+  // strokeWidth is a CSS-pixel weight at scale 1. Bands store height as a page
+  // fraction, so convert through the unscaled page height.
+  #bandThicknessRatio(pageIndex, strokeWidth) {
+    const page = this.pages.get(pageIndex);
+    const pageHeightAt1 = page ? page.height / this.scale : 800;
+    return Math.max(strokeWidth / pageHeightAt1, 0.0012);
+  }
+
+  // After a corner drag the band height has changed; write strokeWidth back so
+  // the thickness slider matches what is on the page.
+  #syncBandStrokeFromHeight(record) {
+    const page = this.pages.get(record.pageIndex);
+    if (!page) return;
+    const pageHeightAt1 = page.height / this.scale;
+    const stroke = record.hRatio * pageHeightAt1;
+    record.strokeWidth = Math.min(8, Math.max(0.5, Math.round(stroke * 2) / 2));
+  }
+
   get selected() {
     return this.records.get(this.activeId) || null;
   }
@@ -345,6 +428,64 @@ export class Annotations {
     for (const id of ids) this.#destroy(id);
     this.onChange();
     return true;
+  }
+
+  // Snapshot of whatever is selected. Returns how many were taken so the
+  // viewer can leave Ctrl+C alone when the selection is empty (PDF text copy).
+  copySelected() {
+    const ids = this.selection.size ? [...this.selection] : this.activeId ? [this.activeId] : [];
+    if (!ids.length) return 0;
+
+    const taken = [];
+    for (const id of ids) {
+      const record = this.records.get(id);
+      if (!record) continue;
+      taken.push(cloneRecord(record));
+    }
+    if (!taken.length) return 0;
+
+    this.clipboard = taken;
+    return taken.length;
+  }
+
+  // Copy then remove. The clipboard keeps the marks so Ctrl+V brings them back
+  // offset, which is the usual cut behaviour in a drawing tool.
+  cutSelected() {
+    const count = this.copySelected();
+    if (!count) return 0;
+    this.deleteSelected();
+    return count;
+  }
+
+  // Drop a slightly offset clone of the clipboard on the same pages the
+  // originals came from. The clipboard is then updated to those clones so a
+  // second paste steps further rather than stacking on the first.
+  pasteClipboard() {
+    if (!this.clipboard.length) return 0;
+
+    const OFFSET = 0.025;
+    const made = [];
+
+    for (const raw of this.clipboard) {
+      const fields = cloneRecord(raw);
+      delete fields.id;
+      offsetRecord(fields, OFFSET, OFFSET);
+      made.push(this.#add(fields));
+    }
+
+    for (const id of this.selection) {
+      this.elements.get(id)?.element.classList.remove('active');
+    }
+    this.selection.clear();
+    for (const record of made) {
+      this.selection.add(record.id);
+      this.elements.get(record.id)?.element.classList.add('active');
+    }
+    this.activeId = made.at(-1)?.id || null;
+    this.onSelect(this.records.get(this.activeId) || null);
+
+    this.clipboard = made.map((record) => cloneRecord(record));
+    return made.length;
   }
 
   hasTextOnPage(pageIndex) {
@@ -575,7 +716,7 @@ export class Annotations {
 
       this.deselect();
       if (this.tool === 'text') this.#createText(pageIndex, point);
-      else if (this.tool === 'stamp') this.#createImage(pageIndex, point);
+      else if (this.tool === 'stamp' || this.tool === 'image') this.#createImage(pageIndex, point);
       else this.#createMark(pageIndex, point, this.tool);
       return;
     }
@@ -585,11 +726,24 @@ export class Annotations {
     if (this.tool === 'pen') this.pending.raw = [point];
   }
 
-  // Selects an existing mark and, for text, drops the caret in it so it can be
-  // corrected straight away.
+  // Selects an existing mark. Under Select, text is only highlighted: a double
+  // click opens the caret. With the Text or Text box tool in hand, picking one
+  // up still drops the caret, since that tool is for writing.
   #pickUp(id) {
     this.#select(id);
-    if (this.records.get(id)?.kind === 'text') this.elements.get(id)?.content.focus();
+    if (
+      this.records.get(id)?.kind === 'text' &&
+      (this.tool === 'text' || this.tool === 'textbox')
+    ) {
+      this.elements.get(id)?.content.focus();
+    }
+  }
+
+  #beginTextEdit(id) {
+    const entry = this.elements.get(id);
+    if (!entry?.content || this.records.get(id)?.kind !== 'text') return;
+    this.#select(id);
+    entry.content.focus();
   }
 
   #createText(pageIndex, point) {
@@ -761,15 +915,17 @@ export class Annotations {
   //
   // A highlight covers the line; a rule is a solid band placed within it, near
   // the feet of the letters for an underline and through the middle for a
-  // strikethrough. All three are the same kind of record underneath, so moving,
-  // recolouring, deleting and undoing need nothing new.
+  // strikethrough. Band height follows the thickness control so the slider that
+  // shows after selecting one actually changes the weight. All three are the
+  // same kind of record underneath, so moving, recolouring, deleting and
+  // undoing need nothing new.
   markSelection(pageIndex, rects, kind = 'highlight') {
     const made = rects.map((rect) => {
       if (kind === 'highlight') {
         return this.#addBox(pageIndex, 'highlight', rect.x, rect.y, rect.w, rect.h);
       }
 
-      const thickness = Math.max(rect.h * 0.07, 0.0012);
+      const thickness = this.#bandThicknessRatio(pageIndex, this.style.strokeWidth);
       const y = kind === 'strike' ? rect.y + rect.h / 2 - thickness / 2 : rect.y + rect.h * 0.82;
       return this.#addBox(pageIndex, 'band', rect.x, y, rect.w, thickness);
     });
@@ -782,6 +938,7 @@ export class Annotations {
   }
 
   #addBox(pageIndex, shape, x, y, w, h) {
+    const outline = shape === 'rect' || shape === 'ellipse';
     return this.#add({
       kind: 'box',
       shape,
@@ -790,6 +947,7 @@ export class Annotations {
       color: this.style.color,
       strokeWidth: this.style.strokeWidth,
       opacity: this.style.opacity,
+      fill: outline ? this.style.fill : null,
     });
   }
 
@@ -954,7 +1112,26 @@ export class Annotations {
       // Stand aside for a drawing tool, letting the press reach the page.
       if (this.tool !== 'select') return;
       if (event.target.closest('.handle, .remove')) return;
-      if (record.kind === 'text' && event.target.closest('.content')) return;
+
+      // Already typing in this note: leave the press to the caret.
+      if (
+        record.kind === 'text' &&
+        event.target.closest('.content') &&
+        document.activeElement === entry.content
+      ) {
+        return;
+      }
+
+      // First click on a text note selects (and can drag). Editing is a
+      // double click, so a single press must not drop the caret.
+      if (record.kind === 'text' && event.target.closest('.content')) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.#select(record.id, { add: event.shiftKey });
+        if (!event.shiftKey) this.#beginDrag(event, record.id, 'move');
+        return;
+      }
+
       event.stopPropagation();
       this.#select(record.id, { add: event.shiftKey });
       // Shift-click is for building a set to align; dragging would scatter it.
@@ -962,6 +1139,16 @@ export class Annotations {
       if (record.kind === 'text' && !event.target.closest('.grip')) return;
       this.#beginDrag(event, record.id, 'move');
     });
+
+    if (record.kind === 'text') {
+      element.addEventListener('dblclick', (event) => {
+        if (this.tool !== 'select') return;
+        if (event.target.closest('.handle, .remove, .grip')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        this.#beginTextEdit(record.id);
+      });
+    }
 
     page.layer.appendChild(element);
     this.elements.set(record.id, entry);
@@ -991,8 +1178,12 @@ export class Annotations {
       }
       this.onChange();
     });
-    content.addEventListener('focus', () => this.#select(entry.record.id));
+    content.addEventListener('focus', () => {
+      entry.element.classList.add('editing');
+      this.#select(entry.record.id);
+    });
     content.addEventListener('focusout', (event) => {
+      entry.element.classList.remove('editing');
       if (event.relatedTarget?.closest(STYLE_CONTROLS)) return;
       if (!entry.record.text.trim()) this.#destroy(entry.record.id);
       else this.onChange();
@@ -1203,7 +1394,7 @@ export class Annotations {
       body.style.opacity = record.shape === 'band' ? '1' : String(record.opacity ?? 0.35);
       body.style.border = 'none';
     } else {
-      body.style.background = 'transparent';
+      body.style.background = record.fill || 'transparent';
       body.style.opacity = '1';
       body.style.border = `${Math.max(1, record.strokeWidth * this.scale)}px solid ${record.color}`;
     }
@@ -1519,7 +1710,16 @@ export class Annotations {
     if (this.marquee) return this.#finishMarquee();
     if (this.pending) return this.#finishPending();
     if (!this.drag) return;
+
+    const id = this.drag.id;
     this.drag = null;
+
+    const record = this.records.get(id);
+    if (record?.shape === 'band') {
+      this.#syncBandStrokeFromHeight(record);
+      this.onSelect(record);
+    }
+
     this.onChange();
   }
 
@@ -1753,6 +1953,25 @@ function boldAllowed(family) {
 // Records written by the first version have no kind and no rot.
 function normalise(record) {
   return { kind: 'text', rot: 0, ...record };
+}
+
+function cloneRecord(record) {
+  return JSON.parse(JSON.stringify(record));
+}
+
+// Shift a record in display ratios. Lines have two ends; everything else is
+// anchored by a top-left. Sizes and stroke points stay put, since ink points
+// live inside the box.
+function offsetRecord(record, dx, dy) {
+  if (record.kind === 'line') {
+    record.x1Ratio = clamp(record.x1Ratio + dx);
+    record.y1Ratio = clamp(record.y1Ratio + dy);
+    record.x2Ratio = clamp(record.x2Ratio + dx);
+    record.y2Ratio = clamp(record.y2Ratio + dy);
+    return;
+  }
+  if (record.xRatio != null) record.xRatio = clamp(record.xRatio + dx);
+  if (record.yRatio != null) record.yRatio = clamp(record.yRatio + dy);
 }
 
 function clamp(value) {

@@ -368,6 +368,8 @@ function drawBox(annotation, context) {
 
   const colour = hexToRgb(annotation.color);
   const paint = rgb(colour.r, colour.g, colour.b);
+  const fillColour = annotation.fill ? hexToRgb(annotation.fill) : null;
+  const fillPaint = fillColour ? rgb(fillColour.r, fillColour.g, fillColour.b) : undefined;
 
   if (annotation.shape === 'ellipse') {
     const centre = toPdfSpace(dx + dw / 2, dy + dh / 2, rotation, context.width, context.height);
@@ -377,20 +379,30 @@ function drawBox(annotation, context) {
       xScale: dw / 2,
       yScale: dh / 2,
       rotate: degrees(rotation),
+      color: fillPaint,
+      opacity: fillPaint ? 1 : 0,
       borderColor: paint,
       borderWidth: annotation.strokeWidth ?? 1.5,
-      opacity: 0,
     });
     return;
   }
 
   const band = annotation.shape === 'band';
-  const filled = band || annotation.shape === 'highlight';
+  const highlight = annotation.shape === 'highlight';
+  if (band || highlight) {
+    drawDisplayRect(context, dx, dy, dw, dh, {
+      color: paint,
+      opacity: band ? 1 : annotation.opacity ?? 0.35,
+      borderWidth: 0,
+    });
+    return;
+  }
+
   drawDisplayRect(context, dx, dy, dw, dh, {
-    color: paint,
-    opacity: band ? 1 : filled ? (annotation.opacity ?? 0.35) : 0,
-    borderColor: filled ? undefined : paint,
-    borderWidth: filled ? 0 : (annotation.strokeWidth ?? 1.5),
+    color: fillPaint,
+    opacity: fillPaint ? 1 : 0,
+    borderColor: paint,
+    borderWidth: annotation.strokeWidth ?? 1.5,
   });
 }
 

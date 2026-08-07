@@ -95,16 +95,17 @@
         <button class="tool icon" data-tool="text" title="Type text (T)"><svg><use href="#i-text"/></svg></button>
         <button class="tool icon" data-tool="textbox" title="Text box, wraps as you type (W)"><svg><use href="#i-textbox"/></svg></button>
         <button class="tool icon" data-tool="pen" title="Pen (P)"><svg><use href="#i-pen"/></svg></button>
-        <button class="tool icon" data-tool="highlight" title="Highlighter (H)"><svg><use href="#i-highlight"/></svg></button>
+        <button class="tool icon" data-tool="highlight" title="Highlighter (H). Drag across a line, or use Select to pick words then Highlight"><svg><use href="#i-highlight"/></svg></button>
         <button class="tool icon" data-tool="rect" title="Rectangle (B)"><svg><use href="#i-rect"/></svg></button>
         <button class="tool icon" data-tool="ellipse" title="Ellipse (O)"><svg><use href="#i-ellipse"/></svg></button>
         <button class="tool icon" data-tool="line" title="Line (L)"><svg><use href="#i-line"/></svg></button>
         <button class="tool icon" data-tool="arrow" title="Arrow (A)"><svg><use href="#i-arrow"/></svg></button>
         <button class="tool icon" data-tool="tick" title="Tick mark (K)"><svg><use href="#i-tick"/></svg></button>
         <button class="tool icon" data-tool="cross" title="Cross mark (X)"><svg><use href="#i-cross"/></svg></button>
-        <button class="tool icon" data-tool="stamp" title="Signature or stamp (S)">
+        <button class="tool icon" data-tool="stamp" title="Signature (S)">
           <img class="stamp-icon-img" src="signature-tool.png" width="28" height="28" alt="">
         </button>
+        <button class="tool icon" data-tool="image" title="Image (I)"><svg><use href="#i-image"/></svg></button>
       </div>
 
       <span class="sep"></span>
@@ -145,14 +146,25 @@
       </div>
 
       <div class="options" id="shapeOpts" hidden>
-        <label class="swatch" title="Colour">
+        <label class="swatch" title="Stroke colour">
           <input type="color" id="shapeColor" value="#d0021b">
+        </label>
+        <label class="swatch is-none" title="Fill (none). Click to add a fill" id="fillSwatch" hidden>
+          <input type="color" id="fillPicker" value="#d0021b">
+          <button type="button" id="fillClear" class="mini" title="No fill (current)" aria-pressed="true">&#8709;</button>
         </label>
         <label class="field" id="thicknessField" title="Line thickness">
           <span>Thickness</span>
           <input type="range" id="strokeWidth" min="0.5" max="8" step="0.5" value="1.5">
         </label>
+        <label class="field" id="opacityField" title="Highlight strength" hidden>
+          <span>Opacity</span>
+          <input type="range" id="highlightOpacity" min="0.1" max="0.9" step="0.05" value="0.35">
+        </label>
         <span id="shapeHint" class="hint"></span>
+        <button type="button" id="highlightSelectTip" class="text-action" hidden>
+          Select words instead
+        </button>
       </div>
 
       <div class="options" id="markOpts" hidden>
@@ -168,16 +180,26 @@
       <div class="options" id="stampOpts" hidden>
         <div id="stampStrip" class="stamp-strip"></div>
         <button id="stampAdd"><svg><use href="#i-plus"/></svg>Add signature</button>
-        <button id="imageAdd"><svg><use href="#i-image"/></svg>Add image</button>
-        <label class="check" id="keepImageField" title="Also save it in the strip for reuse later">
-          <input type="checkbox" id="keepImage">Keep in strip
-        </label>
         <label class="field" id="stampSizeField" title="How wide it lands on the page">
           <span>Size</span>
           <input type="range" id="stampSize" min="0.06" max="0.6" step="0.01" value="0.24">
         </label>
-        <button id="lockAspectBtn" class="icon toggle" aria-pressed="true" title="Lock aspect ratio" hidden><svg><use href="#i-lock"/></svg></button>
+        <button id="stampLockBtn" class="icon toggle" aria-pressed="true" title="Lock aspect ratio" hidden><svg><use href="#i-lock"/></svg></button>
         <span id="stampHint" class="hint"></span>
+      </div>
+
+      <div class="options" id="imageOpts" hidden>
+        <div id="imageStrip" class="stamp-strip"></div>
+        <button id="imageAdd"><svg><use href="#i-image"/></svg>Add image</button>
+        <label class="check" id="keepImageField" title="Also save it in the strip for reuse later">
+          <input type="checkbox" id="keepImage">Keep in strip
+        </label>
+        <label class="field" id="imageSizeField" title="How wide it lands on the page">
+          <span>Size</span>
+          <input type="range" id="imageSize" min="0.06" max="0.6" step="0.01" value="0.24">
+        </label>
+        <button id="imageLockBtn" class="icon toggle" aria-pressed="true" title="Lock aspect ratio" hidden><svg><use href="#i-lock"/></svg></button>
+        <span id="imageHint" class="hint"></span>
       </div>
 
       <span class="spacer"></span>
@@ -269,6 +291,7 @@
               <dt><kbd>K</kbd></dt><dd>Tick</dd>
               <dt><kbd>X</kbd></dt><dd>Cross</dd>
               <dt><kbd>S</kbd></dt><dd>Signature</dd>
+              <dt><kbd>I</kbd></dt><dd>Image</dd>
             </dl>
           </div>
         </section>
@@ -293,6 +316,9 @@
             <dt><kbd>Ctrl</kbd><kbd>I</kbd></dt><dd>Italic</dd>
             <dt><kbd>Ctrl</kbd><kbd>U</kbd></dt><dd>Underline</dd>
             <dt><kbd>Del</kbd></dt><dd>Delete the selection</dd>
+            <dt><kbd>Ctrl</kbd><kbd>C</kbd></dt><dd>Copy the selection</dd>
+            <dt><kbd>Ctrl</kbd><kbd>X</kbd></dt><dd>Cut the selection</dd>
+            <dt><kbd>Ctrl</kbd><kbd>V</kbd></dt><dd>Paste</dd>
             <dt><kbd>Shift</kbd><kbd>click</kbd></dt><dd>Add a text note to the selection</dd>
             <dt><kbd>Ctrl</kbd><kbd>A</kbd></dt><dd>Select every text note on this page</dd>
             <dt>Drag</dt><dd>With Select, drag a box to select text notes</dd>
@@ -314,7 +340,7 @@
 
       <p class="hint">Select text on the page to highlight, underline or strike it.</p>
       <p class="hint">With any tool in hand, click something already on the page to pick it up. Drag and it draws instead.</p>
-      <p class="hint">With Select, drag a box over text notes to select them (or Ctrl+A for the whole page, Shift-click to add). Then align left, right, top or bottom, or change size for all of them.</p>
+      <p class="hint">With Select, click a note to select it, or drag a box over text notes (Ctrl+A for the whole page, Shift-click to add). Double-click a text note to type in it. Then align left, right, top or bottom, or change size for all of them.</p>
 
       <div class="modal-actions">
         <button type="button" id="shortcutClose" class="primary">Close</button>
