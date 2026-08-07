@@ -4,21 +4,6 @@ All notable changes to Write on PDF. Versions follow the manifest.
 
 ## 1.1.0
 
-### Fixed
-
-- PDFs opened by a page's own Print button now land in the editor. These are
-  blob URLs, and Chrome does not fire navigation events for them reliably, so
-  the editor was being skipped and the built in Chrome viewer opened instead.
-  Once the bytes are captured the extension now finds the tab showing that blob
-  and redirects it, with a short poll for tabs that appear a moment later.
-
-### Added
-
-- Tab inside a text box inserts an indent instead of moving focus out of the
-  box. Saved files render it as four spaces.
-
-## 1.1.0
-
 Builds a full annotation toolkit on top of the 1.0 typing and highlighting.
 
 ### Added
@@ -36,11 +21,21 @@ Builds a full annotation toolkit on top of the 1.0 typing and highlighting.
 - Find in document, with match highlighting and a case sensitivity toggle.
 - Freehand pen, shapes, arrows, and tick and cross marks.
 - A keyboard shortcut reference.
+- Tab inside a text box inserts an indent instead of moving focus out of the
+  box. Saved files render it as four spaces.
 
 ### Changed
 
 - Ctrl+Z now drives the annotation history even while the caret sits inside a
   text box.
+
+### Fixed
+
+- PDFs opened by a page's own Print button now land in the editor. These are
+  blob URLs, and Chrome does not fire navigation events for them reliably, so
+  the editor was being skipped and the built in Chrome viewer opened instead.
+  Once the bytes are captured the extension now finds the tab showing that blob
+  and redirects it, with a short poll for tabs that appear a moment later.
 
 ## 1.0.0
 
