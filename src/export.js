@@ -18,6 +18,9 @@ export const CSS_FONTS = {
   helvetica: 'Helvetica, Arial, sans-serif',
   times: '"Times New Roman", Times, serif',
   courier: '"Courier New", Courier, monospace',
+  patrick: '"Patrick Hand", cursive',
+  indie: '"Indie Flower", cursive',
+  handlee: 'Handlee, cursive',
 };
 
 const PDF_FONTS = {
@@ -26,6 +29,51 @@ const PDF_FONTS = {
   times: ['TimesRoman', 'TimesRomanBold', 'TimesRomanItalic', 'TimesRomanBoldItalic'],
   courier: ['Courier', 'CourierBold', 'CourierOblique', 'CourierBoldOblique'],
 };
+
+// Families that are not one of the fourteen every PDF reader already has, so
+// the file itself has to carry them. Paths are relative to the extension root.
+//
+// These hands are single-weight static TTFs that subset and paint cleanly in
+// Chrome's PDF viewer. Caveat did not (blank when subset, gappy when full), so
+// notes that still say "caveat" are remapped to Handlee.
+export const CUSTOM_FONTS = {
+  handlee: {
+    regular: 'vendor/fonts/Handlee-Regular.ttf',
+    bold: 'vendor/fonts/Handlee-Regular.ttf',
+    italic: false,
+    hasBold: false,
+  },
+  indie: {
+    regular: 'vendor/fonts/IndieFlower-Regular.ttf',
+    bold: 'vendor/fonts/IndieFlower-Regular.ttf',
+    italic: false,
+    hasBold: false,
+  },
+  patrick: {
+    regular: 'vendor/fonts/PatrickHand-Regular.ttf',
+    bold: 'vendor/fonts/PatrickHand-Regular.ttf',
+    italic: false,
+    hasBold: false,
+  },
+};
+
+// Old sessions stored Caveat under its own id.
+export function resolveFontFamily(family) {
+  if (family === 'caveat') return 'handlee';
+  return family || 'helvetica';
+}
+
+export function supportsItalic(family) {
+  const resolved = resolveFontFamily(family);
+  return CUSTOM_FONTS[resolved]?.italic !== false;
+}
+
+export function supportsBold(family) {
+  const resolved = resolveFontFamily(family);
+  const custom = CUSTOM_FONTS[resolved];
+  if (!custom) return true;
+  return custom.hasBold !== false;
+}
 
 const MARK_STROKE_RATIO = 0.12; // must match the same constant in annotations.js
 
@@ -79,28 +127,66 @@ export function measureAllBaselineRatios() {
 }
 
 export async function stampPdf(bytes, annotations, options = {}) {
-  const { baselineRatios = {}, stamps = new Map() } = options;
-  const { PDFDocument, StandardFonts, rgb, degrees } = globalThis.PDFLib;
+  const { baselineRatios = {}, stamps = new Map(), loadAsset = null, getFontkit = null } = options;
+  const { PDFDocument, StandardFonts, rgb, degrees, LineCapStyle } = globalThis.PDFLib;
 
   const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
   const pages = doc.getPages();
 
   const fontCache = new Map();
+  let fontkitReady = false;
+
+  // Custom faces have to ride inside the file. These hands subset cleanly and
+  // paint in Chrome's viewer; Caveat did not, which is why it was replaced.
+  const embedCustom = async (family, bold) => {
+    const resolved = resolveFontFamily(family);
+    const paths = CUSTOM_FONTS[resolved];
+    if (!paths || !loadAsset || !getFontkit) return null;
+
+    try {
+      if (!fontkitReady) {
+        doc.registerFontkit(await getFontkit());
+        fontkitReady = true;
+      }
+      const bytes = await loadAsset(bold && paths.hasBold !== false ? paths.bold : paths.regular);
+      return await doc.embedFont(bytes, { subset: true });
+    } catch {
+      // Losing the handwriting is a disappointment. Losing the notes because
+      // one file failed to load would be a bug.
+      return null;
+    }
+  };
+
   const getFont = async (family, bold, italic) => {
-    const name = (PDF_FONTS[family] || PDF_FONTS.helvetica)[(bold ? 1 : 0) + (italic ? 2 : 0)];
+    const resolved = resolveFontFamily(family);
+    const custom = CUSTOM_FONTS[resolved];
+    const useBold = bold && supportsBold(resolved);
+    const key = custom ? `${resolved}${useBold ? '-bold' : ''}` : null;
+    if (key) {
+      if (!fontCache.has(key)) {
+        const embedded = await embedCustom(resolved, useBold);
+        if (embedded) fontCache.set(key, embedded);
+      }
+      if (fontCache.has(key)) return fontCache.get(key);
+    }
+
+    const name = (PDF_FONTS[resolved] || PDF_FONTS.helvetica)[(useBold ? 1 : 0) + (italic ? 2 : 0)];
     if (!fontCache.has(name)) fontCache.set(name, await doc.embedFont(StandardFonts[name]));
     return fontCache.get(name);
   };
 
   const imageCache = new Map();
-  const getImage = async (stampId) => {
-    if (imageCache.has(stampId)) return imageCache.get(stampId);
-    const stamp = stamps.get(stampId);
-    if (!stamp?.dataUrl) return null;
-    const embedded = /^data:image\/png/i.test(stamp.dataUrl)
-      ? await doc.embedPng(stamp.dataUrl)
-      : await doc.embedJpg(stamp.dataUrl);
-    imageCache.set(stampId, embedded);
+  // Prefer bytes stored on the annotation (one-shot Add image) so export still
+  // works when the stamp was never kept in the strip.
+  const getImage = async (annotation) => {
+    const dataUrl = annotation.dataUrl || stamps.get(annotation.stampId)?.dataUrl;
+    if (!dataUrl) return null;
+    const cacheKey = annotation.stampId || dataUrl.slice(0, 48);
+    if (imageCache.has(cacheKey)) return imageCache.get(cacheKey);
+    const embedded = /^data:image\/png/i.test(dataUrl)
+      ? await doc.embedPng(dataUrl)
+      : await doc.embedJpg(dataUrl);
+    imageCache.set(cacheKey, embedded);
     return embedded;
   };
 
@@ -127,6 +213,7 @@ export async function stampPdf(bytes, annotations, options = {}) {
       displayHeight: upright ? height : width,
       rgb,
       degrees,
+      roundCap: LineCapStyle?.Round,
     };
 
     switch (annotation.kind || 'text') {
@@ -135,6 +222,9 @@ export async function stampPdf(bytes, annotations, options = {}) {
         break;
       case 'line':
         drawLine(annotation, context);
+        break;
+      case 'ink':
+        drawInk(annotation, context);
         break;
       case 'mark':
         drawMark(annotation, context);
@@ -158,19 +248,29 @@ async function drawText(annotation, context, getFont, baselineRatios) {
 
   const { page, displayWidth, displayHeight, rotation, rgb, degrees } = context;
   const size = annotation.fontPt;
-  const family = annotation.font || 'helvetica';
-  const font = await getFont(family, annotation.bold, annotation.italic);
+  const family = resolveFontFamily(annotation.font);
+  const font = await getFont(family, annotation.bold, annotation.italic && supportsItalic(family));
   const baseline = baselineRatios[family] ?? FALLBACK_BASELINE_RATIO;
   const colour = hexToRgb(annotation.color);
 
-  raw.split('\n').forEach((rawLine, index) => {
-    const line = sanitise(rawLine);
+  const paragraphs = raw.split('\n').map(sanitise);
+  const lines = annotation.wrap
+    ? paragraphs.flatMap((paragraph) => wrapLine(paragraph, font, size, annotation.wRatio * displayWidth))
+    : paragraphs;
+
+  lines.forEach((line, index) => {
     if (!line) return;
 
-    const displayX = annotation.xRatio * displayWidth;
+    const boxLeft = annotation.xRatio * displayWidth;
+    const boxWidth = (annotation.wRatio || 0) * displayWidth;
+    const runWidth = font.widthOfTextAtSize(line, size);
+    const align = annotation.wrap ? annotation.align || 'left' : 'left';
+    let displayX = boxLeft;
+    if (align === 'center' && boxWidth > 0) displayX = boxLeft + (boxWidth - runWidth) / 2;
+    else if (align === 'right' && boxWidth > 0) displayX = boxLeft + boxWidth - runWidth;
+
     const lineTop = annotation.yRatio * displayHeight + index * LINE_STEP * size;
     const displayY = lineTop + baseline * size;
-    const runWidth = font.widthOfTextAtSize(line, size);
 
     if (annotation.background) {
       drawDisplayRect(
@@ -212,6 +312,51 @@ async function drawText(annotation, context, getFont, baselineRatios) {
   });
 }
 
+// Where the browser breaks a line and where pdf-lib does are two different
+// measurements of the same font, so the export wraps with the metrics it is
+// about to draw with. That guarantees no line overhangs the box, which is the
+// thing that would actually look broken. Helvetica, Times and Courier all share
+// their advance widths with the screen faces, so the breaks land in the same
+// places for anything short of an unusual glyph.
+function wrapLine(text, font, size, maxWidth) {
+  if (!text) return [''];
+
+  const measure = (value) => font.widthOfTextAtSize(value, size);
+  if (maxWidth <= 0 || measure(text) <= maxWidth) return [text];
+
+  const lines = [];
+  let line = '';
+
+  for (const word of text.split(/(\s+)/)) {
+    if (!word) continue;
+
+    const candidate = line + word;
+    if (measure(candidate) <= maxWidth || !line.trim()) {
+      // A single word longer than the box has to be cut somewhere.
+      if (measure(candidate) > maxWidth && !line.trim() && !/\s/.test(word)) {
+        let chunk = '';
+        for (const character of word) {
+          if (chunk && measure(chunk + character) > maxWidth) {
+            lines.push(chunk);
+            chunk = '';
+          }
+          chunk += character;
+        }
+        line = chunk;
+        continue;
+      }
+      line = candidate;
+      continue;
+    }
+
+    lines.push(line.replace(/\s+$/, ''));
+    line = /\s/.test(word) ? '' : word;
+  }
+
+  if (line.trim()) lines.push(line.replace(/\s+$/, ''));
+  return lines.length ? lines : [''];
+}
+
 function drawBox(annotation, context) {
   const { page, displayWidth, displayHeight, rotation, rgb, degrees } = context;
 
@@ -239,10 +384,11 @@ function drawBox(annotation, context) {
     return;
   }
 
-  const filled = annotation.shape === 'highlight';
+  const band = annotation.shape === 'band';
+  const filled = band || annotation.shape === 'highlight';
   drawDisplayRect(context, dx, dy, dw, dh, {
     color: paint,
-    opacity: filled ? (annotation.opacity ?? 0.35) : 0,
+    opacity: band ? 1 : filled ? (annotation.opacity ?? 0.35) : 0,
     borderColor: filled ? undefined : paint,
     borderWidth: filled ? 0 : (annotation.strokeWidth ?? 1.5),
   });
@@ -276,6 +422,35 @@ function drawLine(annotation, context) {
   }
 }
 
+// The on-screen stroke is a curve through the sampled points, but at the
+// spacing they are sampled at the difference from straight segments is under a
+// tenth of a point, and segments avoid having to map bezier control points
+// through the rotation. Round caps and dense points hide every joint.
+function drawInk(annotation, context) {
+  const points = annotation.points || [];
+  if (points.length < 2) return;
+
+  const { displayWidth, displayHeight, rgb, roundCap } = context;
+  const colour = hexToRgb(annotation.color);
+  const style = {
+    thickness: annotation.strokeWidth ?? 1.5,
+    color: rgb(colour.r, colour.g, colour.b),
+    lineCap: roundCap,
+  };
+
+  const dx = annotation.xRatio * displayWidth;
+  const dy = annotation.yRatio * displayHeight;
+  const dw = annotation.wRatio * displayWidth;
+  const dh = annotation.hRatio * displayHeight;
+  const at = (point) => [dx + (point[0] / 100) * dw, dy + (point[1] / 100) * dh];
+
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const [x1, y1] = at(points[i]);
+    const [x2, y2] = at(points[i + 1]);
+    drawDisplayLine(context, x1, y1, x2, y2, style);
+  }
+}
+
 function drawMark(annotation, context) {
   const { displayWidth, displayHeight, rgb } = context;
   const colour = hexToRgb(annotation.color);
@@ -303,7 +478,7 @@ function drawMark(annotation, context) {
 }
 
 async function drawImage(annotation, context, getImage) {
-  const embedded = await getImage(annotation.stampId);
+  const embedded = await getImage(annotation);
   if (!embedded) return;
 
   const { page, displayWidth, displayHeight, rotation, degrees } = context;

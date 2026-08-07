@@ -15,14 +15,19 @@
     <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></symbol>
     <symbol id="i-select" viewBox="0 0 24 24"><path d="m5 3 14 8-6 1.6L10.4 19z"/></symbol>
     <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></symbol>
-    <symbol id="i-highlight" viewBox="0 0 24 24"><path d="m14 3 7 7-8 8H8l-3-3z"/><path d="M4 21h16"/></symbol>
+    <!-- Tilted rather than on the diagonal, so the barrel does not read as the
+         pen next to it, and blunt-nibbed, which is what a highlighter is. -->
+    <symbol id="i-highlight" viewBox="0 0 24 24"><g transform="rotate(20 12 11)"><path d="M7.5 3h9v10h-9z"/><path d="M8.7 13h6.6l-1 5.5H9.7z"/></g><path d="M4 21h16"/></symbol>
     <symbol id="i-rect" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1"/></symbol>
     <symbol id="i-ellipse" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8" ry="6"/></symbol>
     <symbol id="i-line" viewBox="0 0 24 24"><path d="M5 19 19 5"/></symbol>
     <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 19 19 5M11 5h8v8"/></symbol>
     <symbol id="i-tick" viewBox="0 0 24 24"><path d="m4 13 5 5L20 6"/></symbol>
     <symbol id="i-cross" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
-    <symbol id="i-stamp" viewBox="0 0 24 24"><path d="M3 19c3 0 4-2 6-6s3-8 5-8 2 3 0 6-5 5-5 8 2 2 4 1"/><path d="M4 21h16"/></symbol>
+    <!-- White cursive over a blue sign-line, matching the signature product mark. -->
+    <symbol id="i-stamp" viewBox="0 0 24 24"><path d="M4.2 14c.5-3.2 1.2-7.2 3.2-8.2 1.5-.8 2.7.4 3.3 2.8.5 2 1.2 4.4 2.3 4.1 1-.2 1.4-3 2.8-4.2 1.2-1.1 2.8-.8 3.9.9"/><path d="M5.5 18.2h13" stroke-width="2.6"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="6" y="11" width="12" height="10" rx="1.5"/><path d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="1.5"/><circle cx="9" cy="10" r="1.8"/><path d="m5.5 17 4-4.5 3 3 3.5-4.5 4 6"/></symbol>
     <symbol id="i-undo" viewBox="0 0 24 24"><path d="M4 8h10a5 5 0 0 1 0 10H8M4 8l4-4M4 8l4 4"/></symbol>
     <symbol id="i-redo" viewBox="0 0 24 24"><path d="M20 8H10a5 5 0 0 0 0 10h6M20 8l-4-4M20 8l-4 4"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></symbol>
@@ -32,10 +37,30 @@
     <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 10 6 6 6-6"/></symbol>
     <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
     <symbol id="i-chrome" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/><path d="M12 8.5H21M8.9 13.8 4.4 21M15.1 13.8l-4.6 7.6"/></symbol>
+    <!-- A pen held ready, not a line already written: the signature tool is the
+         squiggle, and at 18px two squiggles were indistinguishable. -->
+    <symbol id="i-pen" viewBox="0 0 24 24"><path d="M4 20.5 8 19.5 19.5 8a2.5 2.5 0 0 0-3.5-3.5L4.5 16z"/><path d="M15 5.5 18.5 9"/><path d="M6.5 17.5 4 20.5"/></symbol>
+    <symbol id="i-textbox" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="1.5"/><path d="M8 9h8M8 12h8M8 15h5"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.4 9.3A2.7 2.7 0 0 1 14.7 10c0 1.8-2.7 2.3-2.7 4"/><path d="M12 17.2v.1"/></symbol>
+    <symbol id="i-align-left" viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h13"/></symbol>
+    <symbol id="i-align-center" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M5.5 18h13"/></symbol>
+    <symbol id="i-align-right" viewBox="0 0 24 24"><path d="M4 6h16M10 12h10M7 18h13"/></symbol>
+    <symbol id="i-align-top" viewBox="0 0 24 24"><path d="M4 4h16M7 10v10M12 8v12M17 10v10"/></symbol>
+    <symbol id="i-align-bottom" viewBox="0 0 24 24"><path d="M4 20h16M7 4v10M12 4v12M17 4v10"/></symbol>
   </svg>
 
   <header id="toolbar">
     <div class="bar">
+      <div class="brand">
+        <img class="brand-mark" src="../icons/icon48.png" alt="" width="24" height="24">
+        <span class="brand-text">
+          <span class="brand-name">Write on PDF</span>
+          <span class="brand-by">by CodeKP</span>
+        </span>
+      </div>
+
+      <span class="sep"></span>
+
       <button id="openBtn" class="icon" title="Open a PDF from disk"><svg><use href="#i-open"/></svg></button>
       <span id="fileName" class="filename"></span>
 
@@ -55,6 +80,7 @@
       </div>
 
       <button id="findBtn" class="icon" title="Find in document (Ctrl+F)"><svg><use href="#i-search"/></svg></button>
+      <button id="helpBtn" class="icon" title="Keyboard shortcuts (?)"><svg><use href="#i-help"/></svg></button>
 
       <span class="spacer"></span>
 
@@ -67,6 +93,8 @@
       <div class="tools" role="toolbar" aria-label="Annotation tools">
         <button class="tool icon" data-tool="select" title="Select and edit (V)"><svg><use href="#i-select"/></svg></button>
         <button class="tool icon" data-tool="text" title="Type text (T)"><svg><use href="#i-text"/></svg></button>
+        <button class="tool icon" data-tool="textbox" title="Text box, wraps as you type (W)"><svg><use href="#i-textbox"/></svg></button>
+        <button class="tool icon" data-tool="pen" title="Pen (P)"><svg><use href="#i-pen"/></svg></button>
         <button class="tool icon" data-tool="highlight" title="Highlighter (H)"><svg><use href="#i-highlight"/></svg></button>
         <button class="tool icon" data-tool="rect" title="Rectangle (B)"><svg><use href="#i-rect"/></svg></button>
         <button class="tool icon" data-tool="ellipse" title="Ellipse (O)"><svg><use href="#i-ellipse"/></svg></button>
@@ -74,7 +102,9 @@
         <button class="tool icon" data-tool="arrow" title="Arrow (A)"><svg><use href="#i-arrow"/></svg></button>
         <button class="tool icon" data-tool="tick" title="Tick mark (K)"><svg><use href="#i-tick"/></svg></button>
         <button class="tool icon" data-tool="cross" title="Cross mark (X)"><svg><use href="#i-cross"/></svg></button>
-        <button class="tool icon" data-tool="stamp" title="Signature or stamp (S)"><svg><use href="#i-stamp"/></svg></button>
+        <button class="tool icon" data-tool="stamp" title="Signature or stamp (S)">
+          <img class="stamp-icon-img" src="signature-tool.png" width="28" height="28" alt="">
+        </button>
       </div>
 
       <span class="sep"></span>
@@ -84,6 +114,9 @@
           <option value="helvetica">Helvetica</option>
           <option value="times">Times</option>
           <option value="courier">Courier</option>
+          <option value="handlee">Handlee</option>
+          <option value="indie">Indie Flower</option>
+          <option value="patrick">Patrick Hand</option>
         </select>
         <input type="number" id="fontSize" min="4" max="96" step="1" value="12" title="Font size in points">
         <button id="boldBtn" class="icon toggle" aria-pressed="false" title="Bold (Ctrl+B)"><b>B</b></button>
@@ -93,10 +126,22 @@
         <label class="swatch" title="Text colour">
           <input type="color" id="colorPicker" value="#d0021b">
         </label>
-        <label class="swatch" title="Text background" id="bgSwatch">
+        <label class="swatch is-none" title="Text background (none). Click to add a fill" id="bgSwatch">
           <input type="color" id="bgPicker" value="#ffff00">
-          <button id="bgClear" class="mini" title="No background">&#8709;</button>
+          <button id="bgClear" class="mini" title="No background (current)" aria-pressed="true">&#8709;</button>
         </label>
+        <span class="text-align-group" id="textAlignGroup" title="Align text inside the box" hidden>
+          <button id="textAlignLeftBtn" class="icon toggle" aria-pressed="true" title="Align text left"><svg><use href="#i-align-left"/></svg></button>
+          <button id="textAlignCenterBtn" class="icon toggle" aria-pressed="false" title="Align text center"><svg><use href="#i-align-center"/></svg></button>
+          <button id="textAlignRightBtn" class="icon toggle" aria-pressed="false" title="Align text right"><svg><use href="#i-align-right"/></svg></button>
+        </span>
+        <span class="align-group" id="alignGroup" title="Align selected text notes" hidden>
+          <button id="alignLeftBtn" class="icon" title="Align left edges"><svg><use href="#i-align-left"/></svg></button>
+          <button id="alignRightBtn" class="icon" title="Align right edges"><svg><use href="#i-align-right"/></svg></button>
+          <button id="alignTopBtn" class="icon" title="Align tops"><svg><use href="#i-align-top"/></svg></button>
+          <button id="alignBottomBtn" class="icon" title="Align bottoms"><svg><use href="#i-align-bottom"/></svg></button>
+        </span>
+        <span id="textHint" class="hint"></span>
       </div>
 
       <div class="options" id="shapeOpts" hidden>
@@ -123,10 +168,15 @@
       <div class="options" id="stampOpts" hidden>
         <div id="stampStrip" class="stamp-strip"></div>
         <button id="stampAdd"><svg><use href="#i-plus"/></svg>Add signature</button>
+        <button id="imageAdd"><svg><use href="#i-image"/></svg>Add image</button>
+        <label class="check" id="keepImageField" title="Also save it in the strip for reuse later">
+          <input type="checkbox" id="keepImage">Keep in strip
+        </label>
         <label class="field" id="stampSizeField" title="How wide it lands on the page">
           <span>Size</span>
           <input type="range" id="stampSize" min="0.06" max="0.6" step="0.01" value="0.24">
         </label>
+        <button id="lockAspectBtn" class="icon toggle" aria-pressed="true" title="Lock aspect ratio" hidden><svg><use href="#i-lock"/></svg></button>
         <span id="stampHint" class="hint"></span>
       </div>
 
@@ -194,7 +244,91 @@
     </div>
   </div>
 
-  <div id="scroller">
+  <div id="shortcutDialog" class="modal" hidden>
+    <div class="modal-card card-wide">
+      <h2>Keyboard shortcuts</h2>
+
+      <div class="keys">
+        <section class="full">
+          <h3>Tools</h3>
+          <!-- Two lists rather than one list two pairs wide, so reading down a
+               column follows the order of the toolbar. -->
+          <div class="pair">
+            <dl>
+              <dt><kbd>V</kbd></dt><dd>Select</dd>
+              <dt><kbd>T</kbd></dt><dd>Text</dd>
+              <dt><kbd>W</kbd></dt><dd>Text box</dd>
+              <dt><kbd>P</kbd></dt><dd>Pen</dd>
+              <dt><kbd>H</kbd></dt><dd>Highlighter</dd>
+              <dt><kbd>B</kbd></dt><dd>Rectangle</dd>
+            </dl>
+            <dl>
+              <dt><kbd>O</kbd></dt><dd>Ellipse</dd>
+              <dt><kbd>L</kbd></dt><dd>Line</dd>
+              <dt><kbd>A</kbd></dt><dd>Arrow</dd>
+              <dt><kbd>K</kbd></dt><dd>Tick</dd>
+              <dt><kbd>X</kbd></dt><dd>Cross</dd>
+              <dt><kbd>S</kbd></dt><dd>Signature</dd>
+            </dl>
+          </div>
+        </section>
+
+        <section>
+          <h3>View</h3>
+          <dl>
+            <dt><kbd>Ctrl</kbd><kbd>+</kbd></dt><dd>Zoom in</dd>
+            <dt><kbd>Ctrl</kbd><kbd>-</kbd></dt><dd>Zoom out</dd>
+            <dt><kbd>Ctrl</kbd><kbd>0</kbd></dt><dd>Actual size</dd>
+            <dt><kbd>R</kbd></dt><dd>Rotate the view</dd>
+            <dt><kbd>Ctrl</kbd><kbd>F</kbd></dt><dd>Find in document</dd>
+            <dt><kbd>Enter</kbd></dt><dd>Next match</dd>
+            <dt><kbd>Shift</kbd><kbd>Enter</kbd></dt><dd>Previous match</dd>
+          </dl>
+        </section>
+
+        <section>
+          <h3>Editing</h3>
+          <dl>
+            <dt><kbd>Ctrl</kbd><kbd>B</kbd></dt><dd>Bold</dd>
+            <dt><kbd>Ctrl</kbd><kbd>I</kbd></dt><dd>Italic</dd>
+            <dt><kbd>Ctrl</kbd><kbd>U</kbd></dt><dd>Underline</dd>
+            <dt><kbd>Del</kbd></dt><dd>Delete the selection</dd>
+            <dt><kbd>Shift</kbd><kbd>click</kbd></dt><dd>Add a text note to the selection</dd>
+            <dt><kbd>Ctrl</kbd><kbd>A</kbd></dt><dd>Select every text note on this page</dd>
+            <dt>Drag</dt><dd>With Select, drag a box to select text notes</dd>
+            <dt><kbd>Ctrl</kbd><kbd>Z</kbd></dt><dd>Undo</dd>
+            <dt><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Z</kbd></dt><dd>Redo</dd>
+            <dt><kbd>Esc</kbd></dt><dd>Dismiss</dd>
+          </dl>
+        </section>
+
+        <section class="full">
+          <h3>Document</h3>
+          <dl>
+            <dt><kbd>Ctrl</kbd><kbd>S</kbd></dt><dd>Save a copy</dd>
+            <dt><kbd>Ctrl</kbd><kbd>P</kbd></dt><dd>Print</dd>
+            <dt><kbd>?</kbd></dt><dd>This list</dd>
+          </dl>
+        </section>
+      </div>
+
+      <p class="hint">Select text on the page to highlight, underline or strike it.</p>
+      <p class="hint">With any tool in hand, click something already on the page to pick it up. Drag and it draws instead.</p>
+      <p class="hint">With Select, drag a box over text notes to select them (or Ctrl+A for the whole page, Shift-click to add). Then align left, right, top or bottom, or change size for all of them.</p>
+
+      <div class="modal-actions">
+        <button type="button" id="shortcutClose" class="primary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="selectionBar" class="selection-bar" hidden>
+    <button type="button" id="highlightSelection" title="Highlight the selected text"><svg><use href="#i-highlight"/></svg>Highlight</button>
+    <button type="button" id="underlineSelection" class="icon" title="Underline the selected text"><u>U</u></button>
+    <button type="button" id="strikeSelection" class="icon" title="Strike through the selected text"><s>S</s></button>
+  </div>
+
+  <div id="scroller" tabindex="-1">
     <div id="pages"></div>
   </div>
 
@@ -221,6 +355,7 @@
 
   <input type="file" id="filePicker" accept="application/pdf,.pdf" hidden>
   <input type="file" id="imagePicker" accept="image/png,image/jpeg,image/webp" hidden>
+  <input type="file" id="photoPicker" accept="image/png,image/jpeg,image/webp" hidden>
 
   <script src="../vendor/pdf-lib.min.js"></script>
   <script type="module" src="viewer.js"></script>

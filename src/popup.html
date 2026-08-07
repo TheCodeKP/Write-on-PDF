@@ -13,6 +13,38 @@
       font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     }
     h1 { margin: 0 0 12px; font-size: 14px; font-weight: 600; }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0 0 14px;
+    }
+
+    .brand-mark {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      flex: none;
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+      min-width: 0;
+    }
+
+    .brand-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #e9e9ec;
+    }
+
+    .brand-by {
+      font-size: 11px;
+      color: #9a9aa4;
+    }
     label {
       display: flex;
       align-items: flex-start;
@@ -40,10 +72,49 @@
     button.primary:hover { background: #3f7de8; }
     #note { margin: 10px 0 0; min-height: 16px; color: #9a9aa4; font-size: 11.5px; }
     #note.error { color: #ffb4ac; }
+
+    /* Whether PDFs are actually intercepted comes down to three Chrome settings
+       that live outside this extension and differ from profile to profile. Two
+       can be read, so they are reported rather than guessed at. */
+    .diag-summary {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      height: auto;
+      margin: 0;
+      padding: 0;
+      border: none;
+      border-radius: 0;
+      background: none;
+      color: #9a9aa4;
+      font: inherit;
+      font-size: 11.5px;
+      text-align: left;
+      cursor: pointer;
+    }
+    .diag-summary:hover { background: none; color: #c8c8d0; }
+    .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: #6ac26a; }
+    .dot.bad { background: #ffb257; }
+    .dot.pending { background: #5a5a63; }
+    .diag-list { margin: 9px 0 0; padding: 0; list-style: none; }
+    .diag-list li { display: flex; gap: 8px; padding: 4px 0; }
+    .diag-list.failures-only .pass { display: none; }
+    .diag-list .dot { margin-top: 5px; }
+    .diag-list p { margin: 0; color: #9a9aa4; font-size: 11.5px; }
+    .diag-list strong { display: block; color: #e9e9ec; font-size: 11.5px; font-weight: 500; }
+    .diag-hint { margin: 9px 0 0; color: #7e7e88; font-size: 11px; }
+    .diag-hint code { color: #9a9aa4; font-size: 10.5px; word-break: break-all; }
   </style>
 </head>
 <body>
-  <h1>Write on PDF</h1>
+  <div class="brand">
+    <img class="brand-mark" src="../icons/icon48.png" alt="" width="32" height="32">
+    <span class="brand-text">
+      <span class="brand-name">Write on PDF</span>
+      <span class="brand-by">by CodeKP</span>
+    </span>
+  </div>
 
   <label>
     <input type="checkbox" id="takeover">
@@ -67,6 +138,16 @@
   <button id="blank">Open an empty editor</button>
 
   <p id="note"></p>
+
+  <hr>
+
+  <button type="button" id="diagSummary" class="diag-summary" aria-expanded="false">
+    <span id="diagDot" class="dot pending"></span>
+    <span id="diagText">Checking this profile</span>
+  </button>
+  <ul id="diagList" class="diag-list" hidden></ul>
+  <button type="button" id="diagOpen" hidden>Open extension settings</button>
+  <p id="diagHint" class="diag-hint" hidden></p>
 
   <script src="popup.js"></script>
 </body>

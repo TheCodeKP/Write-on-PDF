@@ -20,10 +20,14 @@ When the Chrome Web Store listing is live, you can also install from there in on
 
 Pick a tool from the second toolbar row; it stays active until you pick another.
 
+Having a tool in hand does not lock you out of what is already on the page. A plain click picks up whatever is under it, so you can fix a word or recolour a shape without going back to Select first. Moving the hand still draws, which is what keeps a stroke over an earlier stroke a stroke rather than a drag.
+
 | Tool | Key | What it does |
 | --- | --- | --- |
 | Select | `V` | Move and resize what is already there, and select page text. |
-| Text | `T` | Click and type. Font, size, bold, italic, underline, strikethrough, colour, highlight behind the text. |
+| Text | `T` | Click and type on one line. Font, size, bold, italic, underline, strikethrough, colour, highlight behind the text. |
+| Text box | `W` | Drag out a width and type. The text wraps inside it and the box grows downwards as you fill it. |
+| Pen | `P` | Draw freehand. Stamped as vectors, so it stays sharp at any zoom and can be moved or resized afterwards. |
 | Highlighter | `H` | Drag a translucent band over text. Drag only, no click. Always stamped underneath your other notes. |
 | Rectangle | `B` | Outline a region. |
 | Ellipse | `O` | Circle something. |
@@ -32,6 +36,10 @@ Pick a tool from the second toolbar row; it stays active until you pick another.
 | Tick | `K` | A check mark. |
 | Cross | `X` | An X mark. |
 | Signature | `S` | Place a saved signature or stamp image. |
+
+### Marking up text you have selected
+
+With Select in hand, drag across words on the page as you would anywhere else. A small bar appears offering **Highlight**, **U** and **S**, which lay a highlight, an underline or a strikethrough over exactly the lines you picked out. Each one is an ordinary annotation afterwards: recolour it, move it, undo it.
 
 ### Signing
 
@@ -43,6 +51,8 @@ Press `S`. Draw a signature or use a PNG, JPEG or WebP image. **Remove the paper
 - Undo / redo (`Ctrl+Z` / `Ctrl+Shift+Z`)
 - Zoom, fit to window, rotate
 - Print (`Ctrl+P`) and save a copy (`Ctrl+S`)
+- The full shortcut list at `?`
+- Handlee, Indie Flower and Patrick Hand handwriting fonts, alongside Helvetica, Times and Courier
 - Notes and reading position remembered per document
 
 Notes are stamped as real text and vectors, not a screenshot of the page.
@@ -59,11 +69,12 @@ Click the extension icon:
 
 - Chrome's PDF setting should stay on **Open PDFs in Chrome**.
 - Some restricted pages cannot run content scripts; use the popup rescue button.
-- Stamped text uses Helvetica, Times or Courier (Latin-1). Characters outside that set may show as `?`.
+- Stamped text uses Helvetica, Times, Courier or a handwriting face (Latin-1). Characters outside that set may show as `?`.
+- Handwriting faces ship as a single weight, so Bold and Italic are unavailable while one is chosen.
 - Password-protected PDFs ask for the password, then work as usual.
 
 ## Licence
 
 GPL-3.0. See [LICENSE](LICENSE).
 
-PDF.js and pdf-lib ship under `vendor/` with their own licences.
+PDF.js, pdf-lib and fontkit ship under `vendor/` with their own licences. The handwriting fonts are under the Open Font Licence; the licence travels with them in `vendor/fonts/OFL.txt`, and `tools/fetch-fonts.mjs` rebuilds the files from Google Fonts.

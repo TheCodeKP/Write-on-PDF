@@ -20,33 +20,64 @@ async function getSettings() {
   return { ...DEFAULTS, ...stored };
 }
 
-async function syncRedirectRule() {
-  const { takeover } = await getSettings();
-  const addRules = takeover
-    ? [
-        {
-          id: PDF_RULE_ID,
-          priority: 1,
-          action: {
-            type: 'redirect',
-            redirect: { regexSubstitution: `${VIEWER_URL}#\\0` },
-          },
-          condition: {
-            regexFilter: String.raw`^https?://.+\.pdf(\?.*)?$`,
-            resourceTypes: ['main_frame'],
-          },
-        },
-      ]
-    : [];
+function pdfRedirectRule() {
+  return {
+    id: PDF_RULE_ID,
+    priority: 1,
+    action: {
+      type: 'redirect',
+      redirect: { regexSubstitution: `${VIEWER_URL}#\\0` },
+    },
+    condition: {
+      regexFilter: String.raw`^https?://.+\.pdf(\?.*)?$`,
+      resourceTypes: ['main_frame'],
+    },
+  };
+}
 
-  await chrome.declarativeNetRequest.updateDynamicRules({
-    removeRuleIds: [PDF_RULE_ID],
-    addRules,
-  });
+// Compared field by field rather than wholesale, because getDynamicRules fills
+// in defaults that were never set here and a blind comparison would rewrite the
+// rule on every wake. Comparing the shape as well as the presence means an
+// update that changes the rule still replaces the old one.
+function ruleMatches(live, wanted) {
+  if (!live || !wanted) return live === wanted;
+  return (
+    live.priority === wanted.priority &&
+    live.action?.type === wanted.action.type &&
+    live.action?.redirect?.regexSubstitution === wanted.action.redirect.regexSubstitution &&
+    live.condition?.regexFilter === wanted.condition.regexFilter &&
+    String(live.condition?.resourceTypes) === String(wanted.condition.resourceTypes)
+  );
+}
+
+// Dynamic rules persist per profile, so a profile whose rule went missing stays
+// broken until something puts it back. Reconciling on every worker start covers
+// that, and the read-before-write above keeps it from writing on each wake.
+async function syncRedirectRule() {
+  try {
+    const { takeover } = await getSettings();
+    const wanted = takeover ? pdfRedirectRule() : null;
+    const rules = await chrome.declarativeNetRequest.getDynamicRules();
+    const live = rules.find((rule) => rule.id === PDF_RULE_ID) || null;
+    if (ruleMatches(live, wanted)) return;
+
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: [PDF_RULE_ID],
+      addRules: wanted ? [wanted] : [],
+    });
+  } catch {
+    // This also runs during top-level evaluation, where an unhandled rejection
+    // would take every listener registration in this file down with it.
+  }
 }
 
 chrome.runtime.onInstalled.addListener(syncRedirectRule);
 chrome.runtime.onStartup.addListener(syncRedirectRule);
+
+// The rule only applies to hosts the extension can actually reach, so widening
+// or narrowing site access changes the answer without any setting here moving.
+chrome.permissions.onAdded.addListener(syncRedirectRule);
+chrome.permissions.onRemoved.addListener(syncRedirectRule);
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.takeover) syncRedirectRule();
@@ -408,3 +439,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   return true; // responses are asynchronous
 });
+
+// Last, so every listener above is registered synchronously before this yields.
+syncRedirectRule();

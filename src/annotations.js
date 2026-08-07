@@ -13,7 +13,45 @@
 
 const LINE_HEIGHT = 1.2;
 const MIN_DRAG_RATIO = 0.008; // below this a drag counts as a click
-const HANDLE_KINDS = new Set(['box', 'image']);
+const HANDLE_KINDS = new Set(['box', 'image', 'ink']);
+
+// How close a new text note has to land to an existing one's left edge before
+// it is pulled into that column. Tuned for form lines stacked under each other.
+const TEXT_COLUMN_SNAP = 0.028;
+
+// Tools that put their mark down on the press. Everything else is drawn out by
+// dragging, so it has a release to wait for before it knows what was meant.
+const STAMPING_TOOLS = new Set(['text', 'tick', 'cross', 'stamp']);
+
+// A tool picks up its own kind of mark and passes straight through everything
+// else. Picking up whatever the press happened to land on sounds friendlier
+// until you draw a rectangle as a signature box: an outlined box answers the
+// pointer across its whole interior, so it swallowed the signature meant to go
+// inside it, and the tick and the note too.
+const PICKS_UP = {
+  text: (record) => record.kind === 'text',
+  textbox: (record) => record.kind === 'text',
+  pen: (record) => record.kind === 'ink',
+  line: (record) => record.kind === 'line',
+  arrow: (record) => record.kind === 'line',
+  tick: (record) => record.kind === 'mark',
+  cross: (record) => record.kind === 'mark',
+  stamp: (record) => record.kind === 'image',
+  rect: isOutline,
+  ellipse: isOutline,
+  highlight: (record) =>
+    record.kind === 'box' && (record.shape === 'highlight' || record.shape === 'band'),
+};
+
+function isOutline(record) {
+  return record.kind === 'box' && (record.shape === 'rect' || record.shape === 'ellipse');
+}
+
+// Pointer moves arrive far denser than a stroke needs, and every extra point is
+// another segment in the exported PDF. Sampling at roughly a millimetre keeps
+// the curve smooth without recording the hand's jitter.
+const INK_SAMPLE_RATIO = 0.0025;
+const MIN_INK_RATIO = 0.001; // a dead straight stroke still needs a box to live in
 
 // Roughly a line of body text on A4. A highlighter is swiped along a line, so
 // the gesture is almost flat and the raw drag height would be nearly nothing.
@@ -27,12 +65,14 @@ const DEFAULT_SIZES = {
   ellipse: { w: 0.2, h: 0.09 },
   line: { w: 0.2, h: 0 },
   arrow: { w: 0.2, h: 0 },
+  textbox: { w: 0.32, h: 0.08 },
 };
 
 const STYLE_KEYS = {
-  text: ['fontPt', 'font', 'bold', 'italic', 'underline', 'strike', 'color', 'background'],
+  text: ['fontPt', 'font', 'bold', 'italic', 'underline', 'strike', 'color', 'background', 'align'],
   box: ['color', 'strokeWidth'],
   line: ['color', 'strokeWidth'],
+  ink: ['color', 'strokeWidth'],
   mark: ['color', 'sizePt'],
   image: [],
 };
@@ -47,6 +87,11 @@ const GLYPH_POINTS = {
   cross: null, // drawn as two separate lines
 };
 
+// Focus landing on one of the toolbar's style controls means the box that just
+// lost it is being restyled, not abandoned, so an empty one is spared. Anywhere
+// else and the usual clean-up applies.
+const STYLE_CONTROLS = '.options';
+
 export class Annotations {
   constructor({ onChange, onSelect, onPlace } = {}) {
     this.records = new Map(); // id -> record
@@ -56,8 +101,9 @@ export class Annotations {
 
     this.scale = 1;
     this.viewRotation = 0;
-    this.tool = 'text';
+    this.tool = 'select';
     this.activeId = null;
+    this.selection = new Set(); // ids showing as selected; activeId is the last one
     this.activeStampId = null;
     this.stampIndex = new Map(); // stampId -> { dataUrl, aspect }
 
@@ -74,6 +120,7 @@ export class Annotations {
       strike: false,
       color: '#d0021b',
       background: null,
+      align: 'left',
       strokeWidth: 1.5,
       opacity: 0.35, // fixed: what makes the highlighter translucent, no control
       sizePt: 18,
@@ -83,6 +130,7 @@ export class Annotations {
     this.drag = null;
     this.pending = null;
     this.ghost = null;
+    this.marquee = null;
 
     window.addEventListener('pointermove', (event) => this.#onPointerMove(event));
     window.addEventListener('pointerup', () => this.#onPointerUp());
@@ -109,7 +157,11 @@ export class Annotations {
       this.elements.delete(id);
       // Keeping a selection on a page that has scrolled away would leave the
       // style controls editing something invisible.
-      if (this.activeId === id) this.deselect();
+      this.selection.delete(id);
+      if (this.activeId === id) {
+        this.activeId = [...this.selection].at(-1) || null;
+        this.onSelect(this.records.get(this.activeId) || null);
+      }
     }
     this.pages.delete(pageIndex);
   }
@@ -136,10 +188,17 @@ export class Annotations {
 
   // In select mode the layer lets the pointer through so the text underneath
   // stays selectable; individual annotations opt back in via CSS.
+  //
+  // With a drawing tool in hand it works the other way round: the layer takes
+  // the pointer and what is already on it stops out of the way, because the
+  // press that starts a new mark must reach the page. A stroke's corner handle
+  // or the fat invisible copy of its path would otherwise catch a stroke drawn
+  // alongside it and quietly resize or drag the earlier one instead.
   #applyToolTo(layer) {
-    layer.style.pointerEvents = this.tool === 'select' ? 'none' : 'auto';
-    layer.style.cursor =
-      this.tool === 'text' ? 'text' : this.tool === 'select' ? 'default' : 'crosshair';
+    const drawing = this.tool !== 'select';
+    layer.style.pointerEvents = drawing ? 'auto' : 'none';
+    layer.classList.toggle('drawing', drawing);
+    layer.style.cursor = this.tool === 'text' ? 'text' : drawing ? 'crosshair' : 'default';
   }
 
   setStamps(stamps) {
@@ -148,9 +207,50 @@ export class Annotations {
     this.#repaintAll();
   }
 
+  // One-shot images stay on the page via dataUrl on the record; this only
+  // feeds the strip / ghost for stamps that should be placeable again.
+  registerStamp(stamp) {
+    if (!stamp?.id || !stamp.dataUrl) return;
+    this.stampIndex.set(stamp.id, stamp);
+  }
+
   setActiveStamp(stampId) {
     this.activeStampId = stampId;
     this.#hideGhost();
+  }
+
+  setLockAspect(locked) {
+    const entry = this.elements.get(this.activeId);
+    if (!entry || entry.record.kind !== 'image') return false;
+    entry.record.lockAspect = Boolean(locked);
+    this.onChange();
+    return true;
+  }
+
+  // Drop an image at a page point (ratios of the page box). Used by Add image
+  // and by the stamp tool's click-to-place path.
+  placeImage(pageIndex, point, stamp, { lockAspect = true } = {}) {
+    if (!stamp?.dataUrl || stamp.aspect == null) return null;
+    const page = this.pages.get(pageIndex);
+    if (!page) return null;
+
+    const wRatio = this.style.stampWidth;
+    const hRatio = (wRatio * page.width * stamp.aspect) / page.height;
+
+    const record = this.#add({
+      kind: 'image',
+      pageIndex,
+      stampId: stamp.id,
+      dataUrl: stamp.dataUrl,
+      aspect: stamp.aspect,
+      lockAspect,
+      ...this.#toRecordBox(point.x - wRatio / 2, point.y - hRatio / 2, wRatio, hRatio),
+    });
+
+    this.#hideGhost();
+    this.#select(record.id);
+    this.onPlace(record);
+    return record;
   }
 
   // ------------------------------------------------------------- stamp ghost
@@ -184,39 +284,52 @@ export class Annotations {
     this.ghost?.remove();
   }
 
-  // Applies to the selection when there is one, and always updates the defaults
-  // used for the next annotation.
+  // Applies to every selected annotation when there is a set (marquee / Shift /
+  // Ctrl+A), and always updates the defaults used for the next annotation.
   applyStyle(patch) {
     Object.assign(this.style, patch);
 
-    const entry = this.elements.get(this.activeId);
-    if (!entry) return;
+    const ids = this.selection.size
+      ? [...this.selection]
+      : this.activeId
+        ? [this.activeId]
+        : [];
+    if (!ids.length) return;
 
-    if (entry.record.kind === 'image' && patch.stampWidth != null) {
-      this.#resizeImage(entry, patch.stampWidth);
-      return;
-    }
-
-    const allowed = STYLE_KEYS[entry.record.kind] || [];
     let touched = false;
-    for (const [key, value] of Object.entries(patch)) {
-      if (!allowed.includes(key)) continue;
-      entry.record[key] = value;
+    for (const id of ids) {
+      const entry = this.elements.get(id);
+      if (!entry) continue;
+
+      if (entry.record.kind === 'image' && patch.stampWidth != null) {
+        this.#resizeImage(entry, patch.stampWidth);
+        touched = true;
+        continue;
+      }
+
+      const allowed = STYLE_KEYS[entry.record.kind] || [];
+      let local = false;
+      for (const [key, value] of Object.entries(patch)) {
+        if (!allowed.includes(key)) continue;
+        entry.record[key] = value;
+        local = true;
+      }
+      if (!local) continue;
+      this.#paint(entry);
       touched = true;
     }
-    if (!touched) return;
 
-    this.#paint(entry);
-    this.onChange();
+    if (touched) this.onChange();
   }
 
   #resizeImage(entry, wRatio) {
-    const stamp = this.stampIndex.get(entry.record.stampId);
-    if (!stamp) return;
+    const aspect =
+      entry.record.aspect ?? this.stampIndex.get(entry.record.stampId)?.aspect;
+    if (aspect == null) return;
 
     const { spaceWidth, spaceHeight } = this.#displayGeometry(entry.record);
     entry.record.wRatio = wRatio;
-    entry.record.hRatio = (wRatio * spaceWidth * stamp.aspect) / spaceHeight;
+    entry.record.hRatio = (wRatio * spaceWidth * aspect) / spaceHeight;
 
     this.#paint(entry);
     this.onChange();
@@ -227,10 +340,151 @@ export class Annotations {
   }
 
   deleteSelected() {
-    if (!this.activeId) return false;
-    this.#destroy(this.activeId);
+    const ids = this.selection.size ? [...this.selection] : this.activeId ? [this.activeId] : [];
+    if (!ids.length) return false;
+    for (const id of ids) this.#destroy(id);
     this.onChange();
     return true;
+  }
+
+  hasTextOnPage(pageIndex) {
+    for (const id of this.byPage.get(pageIndex) || []) {
+      if (this.records.get(id)?.kind === 'text') return true;
+    }
+    return false;
+  }
+
+  // Every text note on a page, for Ctrl+A with Select in hand.
+  selectAllText(pageIndex) {
+    const ids = [...(this.byPage.get(pageIndex) || [])].filter(
+      (id) => this.records.get(id)?.kind === 'text'
+    );
+    return this.selectTexts(ids);
+  }
+
+  // Replace (or grow) the text selection. Used by Ctrl+A and by drag-marquee.
+  selectTexts(ids, { additive = false } = {}) {
+    const textIds = ids.filter((id) => this.records.get(id)?.kind === 'text');
+
+    if (!additive) {
+      for (const id of this.selection) {
+        this.elements.get(id)?.element.classList.remove('active');
+      }
+      this.selection.clear();
+    } else {
+      for (const otherId of [...this.selection]) {
+        if (this.records.get(otherId)?.kind !== 'text') {
+          this.elements.get(otherId)?.element.classList.remove('active');
+          this.selection.delete(otherId);
+        }
+      }
+    }
+
+    for (const id of textIds) {
+      this.selection.add(id);
+      this.elements.get(id)?.element.classList.add('active');
+    }
+
+    this.activeId = textIds.at(-1) ?? [...this.selection].at(-1) ?? null;
+    this.onSelect(this.records.get(this.activeId) || null);
+    return this.selection.size;
+  }
+
+  // CorelDRAW-style rubber band: drag empty page space with Select to gather
+  // text notes. PDF text selection on the text layer is left alone (viewer).
+  beginMarquee(pageIndex, event) {
+    if (this.tool !== 'select' || event.button !== 0) return false;
+    if (this.marquee || this.drag || this.pending) return false;
+    const page = this.pages.get(pageIndex);
+    if (!page) return false;
+
+    const rect = page.layer.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return false;
+
+    this.#endTextEditing();
+
+    const box = document.createElement('div');
+    box.className = 'marquee';
+    page.layer.appendChild(box);
+
+    const x = clamp((event.clientX - rect.left) / rect.width);
+    const y = clamp((event.clientY - rect.top) / rect.height);
+    this.marquee = {
+      pageIndex,
+      rect,
+      startX: x,
+      startY: y,
+      curX: x,
+      curY: y,
+      box,
+      additive: event.shiftKey,
+      moved: false,
+    };
+
+    this.#paintMarquee();
+    return true;
+  }
+
+  // Line up selected text notes on a shared edge. Needs at least two. Boxes are
+  // read from the live elements so wrapped notes and short ones share an edge
+  // by what is on screen, not by a guessed width.
+  alignTexts(edge = 'left') {
+    const targets = [...this.selection]
+      .map((id) => this.records.get(id))
+      .filter((record) => record?.kind === 'text');
+
+    if (targets.length < 2) return false;
+
+    const boxes = targets.map((record) => ({ record, box: this.#displayBox(record) }));
+    let ref;
+    if (edge === 'left') ref = Math.min(...boxes.map(({ box }) => box.x));
+    else if (edge === 'right') ref = Math.max(...boxes.map(({ box }) => box.x + box.w));
+    else if (edge === 'top') ref = Math.min(...boxes.map(({ box }) => box.y));
+    else if (edge === 'bottom') ref = Math.max(...boxes.map(({ box }) => box.y + box.h));
+    else return false;
+
+    for (const { record, box } of boxes) {
+      let x = box.x;
+      let y = box.y;
+      if (edge === 'left') x = ref;
+      else if (edge === 'right') x = ref - box.w;
+      else if (edge === 'top') y = ref;
+      else if (edge === 'bottom') y = ref - box.h;
+
+      const point = this.#toRecordPoint(x, y);
+      record.xRatio = point.xRatio;
+      record.yRatio = point.yRatio;
+      const entry = this.elements.get(record.id);
+      if (entry) this.#paint(entry);
+    }
+
+    this.onChange();
+    return true;
+  }
+
+  #displayBox(record) {
+    const entry = this.elements.get(record.id);
+    const page = this.pages.get(record.pageIndex);
+    if (entry && page) {
+      const er = entry.element.getBoundingClientRect();
+      const pr = page.layer.getBoundingClientRect();
+      if (pr.width > 0 && pr.height > 0) {
+        return {
+          x: (er.left - pr.left) / pr.width,
+          y: (er.top - pr.top) / pr.height,
+          w: er.width / pr.width,
+          h: er.height / pr.height,
+        };
+      }
+    }
+
+    const anchor = this.#anchorOf(record);
+    return {
+      x: anchor.x,
+      y: anchor.y,
+      w: record.wRatio || 0,
+      h: record.hRatio || 0,
+    };
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -257,6 +511,7 @@ export class Annotations {
     this.elements.clear();
     this.records.clear();
     this.byPage.clear();
+    this.selection.clear();
     this.activeId = null;
     this.onSelect(null);
     this.load(records);
@@ -277,8 +532,26 @@ export class Annotations {
   #onLayerPointerDown(event, pageIndex) {
     if (event.button !== 0) return;
     const page = this.pages.get(pageIndex);
-    if (!page || event.target !== page.layer) return;
+    if (!page) return;
     if (this.tool === 'select') return;
+
+    // A press that lands on a mark this tool would pick up is read on release:
+    // move the hand and it draws a new one, keep it still and it takes the one
+    // underneath. That way a tool in hand is no reason to go back to Select
+    // just to fix a word or recolour a box, and drawing across earlier marks
+    // still draws rather than dragging them about.
+    let over = null;
+    if (event.target !== page.layer) {
+      over = event.target.closest?.('.anno');
+      if (!over) return;
+    }
+
+    const candidate = over ? this.records.get(over.dataset.id) : null;
+    const overId = candidate && PICKS_UP[this.tool]?.(candidate) ? candidate.id : null;
+
+    // A press inside text this tool would pick up anyway is left to the browser,
+    // so the caret lands on the letter it was aimed at.
+    if (overId && event.target.closest('.content')) return;
 
     const rect = page.layer.getBoundingClientRect();
     const point = {
@@ -291,32 +564,72 @@ export class Annotations {
     if (document.activeElement?.isContentEditable) document.activeElement.blur();
 
     event.preventDefault();
-    this.deselect();
 
-    switch (this.tool) {
-      case 'text':
-        this.#createText(pageIndex, point);
+    // These tools place their mark on the press and have no drag to wait for,
+    // so the choice between drawing and picking up is made here.
+    if (STAMPING_TOOLS.has(this.tool)) {
+      if (overId) {
+        this.#pickUp(overId);
         return;
-      case 'tick':
-      case 'cross':
-        this.#createMark(pageIndex, point, this.tool);
-        return;
-      case 'stamp':
-        this.#createImage(pageIndex, point);
-        return;
-      default:
-        this.pending = { tool: this.tool, pageIndex, origin: point, current: point, id: null };
+      }
+
+      this.deselect();
+      if (this.tool === 'text') this.#createText(pageIndex, point);
+      else if (this.tool === 'stamp') this.#createImage(pageIndex, point);
+      else this.#createMark(pageIndex, point, this.tool);
+      return;
     }
+
+    this.deselect();
+    this.pending = { tool: this.tool, pageIndex, origin: point, current: point, id: null, overId };
+    if (this.tool === 'pen') this.pending.raw = [point];
+  }
+
+  // Selects an existing mark and, for text, drops the caret in it so it can be
+  // corrected straight away.
+  #pickUp(id) {
+    this.#select(id);
+    if (this.records.get(id)?.kind === 'text') this.elements.get(id)?.content.focus();
   }
 
   #createText(pageIndex, point) {
     const lineHeightRatio =
       (this.style.fontPt * this.scale * LINE_HEIGHT) / (this.pages.get(pageIndex)?.height || 1);
 
-    const record = this.#add({
+    // A click near an existing note's left edge joins that column, which is how
+    // form lines under each other stay lined up without a second tool.
+    const x = this.#snapTextX(pageIndex, point.x) ?? point.x;
+
+    const record = this.#addText(pageIndex, {
+      ...this.#toRecordPoint(x, point.y - lineHeightRatio / 2),
+    });
+
+    this.elements.get(record.id)?.content.focus();
+  }
+
+  #snapTextX(pageIndex, displayX) {
+    let best = null;
+    let bestDist = TEXT_COLUMN_SNAP;
+    for (const id of this.byPage.get(pageIndex) || []) {
+      const record = this.records.get(id);
+      if (!record || record.kind !== 'text') continue;
+      const dist = Math.abs(this.#anchorOf(record).x - displayX);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = this.#anchorOf(record).x;
+      }
+    }
+    return best;
+  }
+
+  // A plain text note grows along one line and is anchored by a point. A text
+  // box is given a width and wraps inside it, so it also carries a box. The two
+  // share everything else, including how they are styled and exported.
+  #addText(pageIndex, geometry) {
+    return this.#add({
       kind: 'text',
       pageIndex,
-      ...this.#toRecordPoint(point.x, point.y - lineHeightRatio / 2),
+      ...geometry,
       fontPt: this.style.fontPt,
       font: this.style.font,
       bold: this.style.bold,
@@ -325,10 +638,9 @@ export class Annotations {
       strike: this.style.strike,
       color: this.style.color,
       background: this.style.background,
+      align: this.style.align || 'left',
       text: '',
     });
-
-    this.elements.get(record.id)?.content.focus();
   }
 
   #createMark(pageIndex, point, glyph) {
@@ -336,7 +648,7 @@ export class Annotations {
     const sizeRatioX = (this.style.sizePt * this.scale) / page.width;
     const sizeRatioY = (this.style.sizePt * this.scale) / page.height;
 
-    this.#add({
+    const record = this.#add({
       kind: 'mark',
       glyph,
       pageIndex,
@@ -344,30 +656,16 @@ export class Annotations {
       sizePt: this.style.sizePt,
       color: this.style.color,
     });
+
+    this.#select(record.id);
   }
 
   #createImage(pageIndex, point) {
     const stamp = this.stampIndex.get(this.activeStampId);
     if (!stamp) return;
-
-    const page = this.pages.get(pageIndex);
-    const wRatio = this.style.stampWidth;
-    // aspect is height over width, so it has to go through the page box to come
-    // out as a height ratio that keeps the image undistorted.
-    const hRatio = (wRatio * page.width * stamp.aspect) / page.height;
-
-    const record = this.#add({
-      kind: 'image',
-      pageIndex,
-      stampId: this.activeStampId,
-      ...this.#toRecordBox(point.x - wRatio / 2, point.y - hRatio / 2, wRatio, hRatio),
-    });
-
     // Selected straight away so the resize handles are already showing, which
     // is the difference between "did that work?" and "there it is, drag it".
-    this.#hideGhost();
-    this.#select(record.id);
-    this.onPlace(record);
+    this.placeImage(pageIndex, point, stamp, { lockAspect: true });
   }
 
   #finishPending() {
@@ -375,11 +673,62 @@ export class Annotations {
     this.pending = null;
     if (!pending) return;
 
+    // A pen is either a stroke or nothing. Clicking with it and getting a dot
+    // you did not ask for is the sort of stray mark that ends up printed.
+    if (pending.tool === 'pen') {
+      if (pending.id && pending.raw.length > 1) this.#select(pending.id);
+      else {
+        if (pending.id) this.#destroy(pending.id);
+        if (pending.overId && this.records.has(pending.overId)) this.#pickUp(pending.overId);
+      }
+      if (pending.id) this.onChange();
+      return;
+    }
+
     const dx = pending.current.x - pending.origin.x;
     const dy = pending.current.y - pending.origin.y;
     const tiny = Math.abs(dx) < MIN_DRAG_RATIO && Math.abs(dy) < MIN_DRAG_RATIO;
 
+    // The hand never moved and there was something under it, so this was a
+    // click on an existing mark rather than the start of a new one.
+    if (tiny && pending.overId && this.records.has(pending.overId)) {
+      if (pending.id) {
+        this.#destroy(pending.id);
+        this.onChange();
+      }
+
+      this.#pickUp(pending.overId);
+      return;
+    }
+
+    // A text box that was dragged out is ready to type into, and one that was
+    // only clicked gets a sensible size rather than a sliver.
+    if (pending.tool === 'textbox') {
+      const record = pending.id
+        ? this.records.get(pending.id)
+        : this.#addText(pending.pageIndex, {
+            ...this.#toRecordBox(pending.origin.x, pending.origin.y, 0, 0),
+            wrap: true,
+          });
+
+      if (tiny) {
+        const preset = DEFAULT_SIZES.textbox;
+        Object.assign(record, { wRatio: preset.w, hRatio: preset.h });
+        const entry = this.elements.get(record.id);
+        if (entry) this.#paint(entry);
+      }
+
+      this.#select(record.id);
+      this.elements.get(record.id)?.content.focus();
+      this.onChange();
+      return;
+    }
+
+    // Left selected so the colour and thickness controls act on what was just
+    // drawn. Without it the next thing touched is the default for the following
+    // shape, which looks like the control simply doing nothing.
     if (pending.id && !tiny) {
+      this.#select(pending.id);
       this.onChange();
       return;
     }
@@ -394,15 +743,42 @@ export class Annotations {
       return;
     }
 
-    if (pending.tool === 'line' || pending.tool === 'arrow') {
-      this.#addLine(pending.pageIndex, pending.origin, {
-        x: pending.origin.x + preset.w,
-        y: pending.origin.y,
-      }, pending.tool === 'arrow');
-    } else {
-      this.#addBox(pending.pageIndex, pending.tool, pending.origin.x, pending.origin.y, preset.w, preset.h);
-    }
+    const record =
+      pending.tool === 'line' || pending.tool === 'arrow'
+        ? this.#addLine(pending.pageIndex, pending.origin, {
+            x: pending.origin.x + preset.w,
+            y: pending.origin.y,
+          }, pending.tool === 'arrow')
+        : this.#addBox(pending.pageIndex, pending.tool, pending.origin.x, pending.origin.y, preset.w, preset.h);
+
+    this.#select(record.id);
     this.onChange();
+  }
+
+  // Marks laid over text that has been selected rather than swiped across.
+  // Rects are fractions of the displayed page, one per line, and they take the
+  // current colour so both ways of marking text agree.
+  //
+  // A highlight covers the line; a rule is a solid band placed within it, near
+  // the feet of the letters for an underline and through the middle for a
+  // strikethrough. All three are the same kind of record underneath, so moving,
+  // recolouring, deleting and undoing need nothing new.
+  markSelection(pageIndex, rects, kind = 'highlight') {
+    const made = rects.map((rect) => {
+      if (kind === 'highlight') {
+        return this.#addBox(pageIndex, 'highlight', rect.x, rect.y, rect.w, rect.h);
+      }
+
+      const thickness = Math.max(rect.h * 0.07, 0.0012);
+      const y = kind === 'strike' ? rect.y + rect.h / 2 - thickness / 2 : rect.y + rect.h * 0.82;
+      return this.#addBox(pageIndex, 'band', rect.x, y, rect.w, thickness);
+    });
+
+    // A single line is one thing, and selecting it puts the colour control
+    // straight onto it. Several lines are a set, and outlining only the last
+    // would say something untrue about what was made.
+    if (made.length === 1) this.#select(made[0].id);
+    return made;
   }
 
   #addBox(pageIndex, shape, x, y, w, h) {
@@ -414,6 +790,47 @@ export class Annotations {
       color: this.style.color,
       strokeWidth: this.style.strokeWidth,
       opacity: this.style.opacity,
+    });
+  }
+
+  #addInk(pageIndex) {
+    return this.#add({
+      kind: 'ink',
+      pageIndex,
+      ...this.#toRecordBox(0, 0, 0, 0),
+      points: [],
+      color: this.style.color,
+      strokeWidth: this.style.strokeWidth,
+    });
+  }
+
+  // A stroke is kept as a bounding box plus points inside a 100 unit square,
+  // the same shape a tick or a cross uses. Dragging a corner then scales the
+  // drawing for free, and the export needs to know nothing about how it was
+  // drawn. The box is recomputed from the raw points on every move, so the
+  // stroke stays exact however far it wanders from where it started.
+  #reshapeInk(record, raw) {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const point of raw) {
+      minX = Math.min(minX, point.x);
+      maxX = Math.max(maxX, point.x);
+      minY = Math.min(minY, point.y);
+      maxY = Math.max(maxY, point.y);
+    }
+
+    // A dead straight stroke has no extent across itself, and dividing by that
+    // would send every point to infinity.
+    const width = Math.max(maxX - minX, MIN_INK_RATIO);
+    const height = Math.max(maxY - minY, MIN_INK_RATIO);
+
+    Object.assign(record, this.#toRecordBox(minX, minY, width, height), {
+      points: raw.map((point) => [
+        round2(((point.x - minX) / width) * 100),
+        round2(((point.y - minY) / height) * 100),
+      ]),
     });
   }
 
@@ -484,12 +901,18 @@ export class Annotations {
 
     const element = document.createElement('div');
     element.className = `anno anno-${record.kind}`;
+    if (record.wrap) element.classList.add('anno-wrap');
     element.dataset.id = record.id;
 
+    // Kept clear of the corner handles and drawn as a cross, so it reads as
+    // "remove this" rather than another resize control.
     const remove = document.createElement('button');
     remove.className = 'remove';
+    remove.type = 'button';
     remove.title = 'Delete';
-    remove.textContent = '\u00d7';
+    remove.setAttribute('aria-label', 'Delete');
+    remove.innerHTML =
+      '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2 2 10"/></svg>';
 
     const entry = { record, element, remove };
 
@@ -503,6 +926,9 @@ export class Annotations {
       case 'line':
         this.#buildLine(entry);
         break;
+      case 'ink':
+        this.#buildInk(entry);
+        break;
       case 'mark':
         this.#buildMark(entry);
         break;
@@ -515,19 +941,24 @@ export class Annotations {
 
     element.appendChild(remove);
     remove.addEventListener('pointerdown', (event) => {
+      if (this.tool !== 'select') return;
       event.preventDefault();
       event.stopPropagation();
       this.#destroy(record.id);
       this.onChange();
     });
 
-    if (HANDLE_KINDS.has(record.kind)) this.#addCornerHandles(entry);
+    if (HANDLE_KINDS.has(record.kind) || record.wrap) this.#addCornerHandles(entry);
 
     element.addEventListener('pointerdown', (event) => {
+      // Stand aside for a drawing tool, letting the press reach the page.
+      if (this.tool !== 'select') return;
       if (event.target.closest('.handle, .remove')) return;
       if (record.kind === 'text' && event.target.closest('.content')) return;
       event.stopPropagation();
-      this.#select(record.id);
+      this.#select(record.id, { add: event.shiftKey });
+      // Shift-click is for building a set to align; dragging would scatter it.
+      if (event.shiftKey) return;
       if (record.kind === 'text' && !event.target.closest('.grip')) return;
       this.#beginDrag(event, record.id, 'move');
     });
@@ -555,10 +986,14 @@ export class Annotations {
 
     content.addEventListener('input', () => {
       entry.record.text = content.innerText.replace(/\n$/, '');
+      if (entry.record.wrap) {
+        entry.element.classList.toggle('empty', !entry.record.text.trim());
+      }
       this.onChange();
     });
     content.addEventListener('focus', () => this.#select(entry.record.id));
-    content.addEventListener('blur', () => {
+    content.addEventListener('focusout', (event) => {
+      if (event.relatedTarget?.closest(STYLE_CONTROLS)) return;
       if (!entry.record.text.trim()) this.#destroy(entry.record.id);
       else this.onChange();
     });
@@ -597,7 +1032,9 @@ export class Annotations {
       const handle = document.createElement('span');
       handle.className = 'handle';
       handle.dataset.handle = name;
+      handle.title = 'Move end';
       handle.addEventListener('pointerdown', (event) => {
+        if (this.tool !== 'select') return;
         event.preventDefault();
         event.stopPropagation();
         this.#select(entry.record.id);
@@ -606,6 +1043,26 @@ export class Annotations {
       entry.element.appendChild(handle);
       entry[name] = handle;
     }
+  }
+
+  // preserveAspectRatio none lets the square of points stretch to whatever the
+  // box became, and a non-scaling stroke keeps the nib round while it does.
+  #buildInk(entry) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 100 100');
+    svg.setAttribute('preserveAspectRatio', 'none');
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const hit = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    hit.setAttribute('class', 'hit');
+    for (const node of [path, hit]) {
+      node.setAttribute('fill', 'none');
+      node.setAttribute('vector-effect', 'non-scaling-stroke');
+    }
+
+    svg.append(path, hit);
+    entry.element.appendChild(svg);
+    Object.assign(entry, { svg, path, hit });
   }
 
   #buildMark(entry) {
@@ -647,7 +1104,9 @@ export class Annotations {
       const handle = document.createElement('span');
       handle.className = `handle handle-${name}`;
       handle.dataset.handle = name;
+      handle.title = 'Resize';
       handle.addEventListener('pointerdown', (event) => {
+        if (this.tool !== 'select') return;
         event.preventDefault();
         event.stopPropagation();
         this.#select(entry.record.id);
@@ -677,6 +1136,9 @@ export class Annotations {
       case 'line':
         this.#paintLine(entry);
         break;
+      case 'ink':
+        this.#paintInk(entry, spaceWidth, spaceHeight);
+        break;
       case 'mark':
         this.#paintMark(entry, spaceWidth, spaceHeight);
         break;
@@ -688,21 +1150,38 @@ export class Annotations {
     }
   }
 
-  #paintText({ record, element }) {
+  #paintText({ record, element }, spaceWidth, spaceHeight) {
     const anchor = this.#anchorOf(record);
     element.style.left = `${anchor.x * 100}%`;
     element.style.top = `${anchor.y * 100}%`;
+
+    // Width is what makes the text wrap, so it is fixed. Height is only where
+    // the box started: more text than fits pushes the bottom down rather than
+    // disappearing under it.
+    if (record.wrap) {
+      element.style.width = `${record.wRatio * spaceWidth}px`;
+      element.style.minHeight = `${record.hRatio * spaceHeight}px`;
+      element.classList.toggle('empty', !record.text.trim());
+    }
+
     element.style.fontSize = `${record.fontPt * this.scale}px`;
     element.style.fontFamily = cssFontFor(record.font);
-    element.style.fontWeight = record.bold ? '700' : '400';
-    element.style.fontStyle = record.italic ? 'italic' : 'normal';
+    element.style.fontWeight = record.bold && boldAllowed(record.font) ? '700' : '400';
+    element.style.fontStyle = record.italic && italicAllowed(record.font) ? 'italic' : 'normal';
     element.style.color = record.color;
-    element.style.background = record.background || 'transparent';
+    // An empty wrapping box leaves background to CSS so the wash that makes the
+    // box readable can show. A chosen highlight colour still wins.
+    if (record.wrap && !record.text.trim() && !record.background) {
+      element.style.background = '';
+    } else {
+      element.style.background = record.background || 'transparent';
+    }
 
     const decorations = [];
     if (record.underline) decorations.push('underline');
     if (record.strike) decorations.push('line-through');
     element.style.textDecoration = decorations.join(' ') || 'none';
+    element.style.textAlign = record.wrap ? record.align || 'left' : '';
   }
 
   #paintBox({ record, element, body }, spaceWidth, spaceHeight) {
@@ -713,9 +1192,9 @@ export class Annotations {
     element.style.height = `${record.hRatio * spaceHeight}px`;
 
     body.style.borderRadius = record.shape === 'ellipse' ? '50%' : '0';
-    if (record.shape === 'highlight') {
+    if (record.shape === 'highlight' || record.shape === 'band') {
       body.style.background = record.color;
-      body.style.opacity = String(record.opacity ?? 0.35);
+      body.style.opacity = record.shape === 'band' ? '1' : String(record.opacity ?? 0.35);
       body.style.border = 'none';
     } else {
       body.style.background = 'transparent';
@@ -786,6 +1265,30 @@ export class Annotations {
     entry.p2.style.top = `${y2 - top}px`;
   }
 
+  #paintInk({ record, element, path, hit, svg }, spaceWidth, spaceHeight) {
+    const anchor = this.#anchorOf(record);
+    element.style.left = `${anchor.x * 100}%`;
+    element.style.top = `${anchor.y * 100}%`;
+    element.style.width = `${record.wRatio * spaceWidth}px`;
+    element.style.height = `${record.hRatio * spaceHeight}px`;
+
+    // Without an explicit size, an SVG with a square viewBox keeps a square
+    // used size even when inset:0 asks it to fill a tall or wide box. The path
+    // then lives in that square while the selection outline follows the real
+    // box, so a stroke looks like it is thrashing until the box happens to be
+    // square again (a finished circle).
+    svg.setAttribute('width', '100%');
+    svg.setAttribute('height', '100%');
+
+    const d = inkPath(record.points);
+    path.setAttribute('d', d);
+    hit.setAttribute('d', d);
+    path.setAttribute('stroke', record.color);
+    path.setAttribute('stroke-width', Math.max(1, record.strokeWidth * this.scale));
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('stroke-linejoin', 'round');
+  }
+
   #paintMark({ record, element, svg }) {
     const size = record.sizePt * this.scale;
     const anchor = this.#anchorOf(record);
@@ -811,8 +1314,8 @@ export class Annotations {
     element.style.width = `${record.wRatio * spaceWidth}px`;
     element.style.height = `${record.hRatio * spaceHeight}px`;
 
-    const stamp = this.stampIndex.get(record.stampId);
-    if (stamp?.dataUrl && img.src !== stamp.dataUrl) img.src = stamp.dataUrl;
+    const src = record.dataUrl || this.stampIndex.get(record.stampId)?.dataUrl;
+    if (src && img.src !== src) img.src = src;
   }
 
   #repaintAll() {
@@ -838,6 +1341,7 @@ export class Annotations {
   }
 
   #onPointerMove(event) {
+    if (this.marquee) return this.#updateMarquee(event);
     if (this.pending) return this.#updatePending(event);
     if (!this.drag) return;
 
@@ -869,9 +1373,9 @@ export class Annotations {
     const west = handle.includes('w');
     const north = handle.includes('n');
 
-    // A stretched signature looks forged, so images scale rather than reshape:
-    // width follows the pointer and height follows the width.
-    if (record.kind === 'image') {
+    // Signatures stay locked by default (a stretched one looks forged). Photos
+    // can unlock and free-resize like a box; lockAspect false falls through.
+    if (record.kind === 'image' && record.lockAspect !== false) {
       const aspect = snapshot.hRatio / snapshot.wRatio;
       const wRatio = west ? snapshot.wRatio - shift.x : snapshot.wRatio + shift.x;
       if (wRatio < 0.02) return;
@@ -884,6 +1388,7 @@ export class Annotations {
         xRatio: clamp(west ? snapshot.xRatio + snapshot.wRatio - wRatio : snapshot.xRatio),
         yRatio: clamp(north ? snapshot.yRatio + snapshot.hRatio - hRatio : snapshot.yRatio),
       });
+
       return;
     }
 
@@ -942,11 +1447,33 @@ export class Annotations {
     };
 
     const { origin, current } = pending;
+
+    if (pending.tool === 'pen') {
+      const last = pending.raw[pending.raw.length - 1];
+      if (Math.hypot(current.x - last.x, current.y - last.y) < INK_SAMPLE_RATIO) return;
+      pending.raw.push(current);
+
+      const record = pending.id
+        ? this.records.get(pending.id)
+        : this.#addInk(pending.pageIndex);
+      pending.id = record.id;
+
+      this.#reshapeInk(record, pending.raw);
+      const entry = this.elements.get(record.id);
+      if (entry) this.#paint(entry);
+      return;
+    }
+
     if (!pending.id) {
       const record =
         pending.tool === 'line' || pending.tool === 'arrow'
           ? this.#addLine(pending.pageIndex, origin, current, pending.tool === 'arrow')
-          : this.#addBox(pending.pageIndex, pending.tool, origin.x, origin.y, 0, 0);
+          : pending.tool === 'textbox'
+            ? this.#addText(pending.pageIndex, {
+                ...this.#toRecordBox(origin.x, origin.y, 0, 0),
+                wrap: true,
+              })
+            : this.#addBox(pending.pageIndex, pending.tool, origin.x, origin.y, 0, 0);
       pending.id = record.id;
       return;
     }
@@ -983,28 +1510,143 @@ export class Annotations {
   }
 
   #onPointerUp() {
+    if (this.marquee) return this.#finishMarquee();
     if (this.pending) return this.#finishPending();
     if (!this.drag) return;
     this.drag = null;
     this.onChange();
   }
 
+  #updateMarquee(event) {
+    const m = this.marquee;
+    if (!m) return;
+
+    // Keep using the start page's box so the band stays glued to that page
+    // even if the pointer drifts onto the next one.
+    m.curX = clamp((event.clientX - m.rect.left) / m.rect.width);
+    m.curY = clamp((event.clientY - m.rect.top) / m.rect.height);
+    const dist = Math.hypot(m.curX - m.startX, m.curY - m.startY);
+    if (dist >= MIN_DRAG_RATIO) {
+      if (!m.moved) {
+        m.moved = true;
+        window.getSelection()?.removeAllRanges?.();
+      }
+    }
+    this.#paintMarquee();
+  }
+
+  #paintMarquee() {
+    const m = this.marquee;
+    if (!m?.box) return;
+    const left = Math.min(m.startX, m.curX);
+    const top = Math.min(m.startY, m.curY);
+    const width = Math.abs(m.curX - m.startX);
+    const height = Math.abs(m.curY - m.startY);
+    m.box.style.left = `${left * 100}%`;
+    m.box.style.top = `${top * 100}%`;
+    m.box.style.width = `${width * 100}%`;
+    m.box.style.height = `${height * 100}%`;
+    m.box.hidden = !m.moved;
+  }
+
+  #finishMarquee() {
+    const m = this.marquee;
+    this.marquee = null;
+    m?.box?.remove();
+    if (!m) return;
+
+    if (!m.moved) {
+      if (!m.additive) this.deselect();
+      return;
+    }
+
+    const band = {
+      x: Math.min(m.startX, m.curX),
+      y: Math.min(m.startY, m.curY),
+      w: Math.abs(m.curX - m.startX),
+      h: Math.abs(m.curY - m.startY),
+    };
+
+    const hit = [];
+    for (const id of this.byPage.get(m.pageIndex) || []) {
+      const record = this.records.get(id);
+      if (record?.kind !== 'text') continue;
+      const box = this.#displayBox(record);
+      if (rectsOverlap(band, box)) hit.push(id);
+    }
+
+    this.selectTexts(hit, { additive: m.additive });
+  }
+
   // ----------------------------------------------------------------- selection
 
-  #select(id) {
-    if (this.activeId === id) return;
-    this.elements.get(this.activeId)?.element.classList.remove('active');
+  #select(id, { add = false } = {}) {
+    const record = this.records.get(id);
+    if (!record) return;
+
+    // Shift-click builds a set of text notes to align. Anything else replaces
+    // the selection, the way a plain click always has.
+    const additive = add && record.kind === 'text';
+
+    if (additive) {
+      for (const otherId of [...this.selection]) {
+        if (this.records.get(otherId)?.kind !== 'text') {
+          this.elements.get(otherId)?.element.classList.remove('active');
+          this.selection.delete(otherId);
+        }
+      }
+
+      if (this.selection.has(id)) {
+        this.selection.delete(id);
+        this.elements.get(id)?.element.classList.remove('active');
+        this.activeId = [...this.selection].at(-1) || null;
+        if (this.activeId) this.elements.get(this.activeId)?.element.classList.add('active');
+        this.onSelect(this.records.get(this.activeId) || null);
+        return;
+      }
+    } else {
+      if (this.activeId === id && this.selection.size <= 1) return;
+      for (const otherId of this.selection) {
+        if (otherId !== id) this.elements.get(otherId)?.element.classList.remove('active');
+      }
+      this.selection.clear();
+    }
+
+    this.selection.add(id);
     this.activeId = id;
-    const entry = this.elements.get(id);
-    entry?.element.classList.add('active');
-    this.onSelect(entry?.record || null);
+    this.elements.get(id)?.element.classList.add('active');
+    this.onSelect(record);
   }
 
   deselect() {
-    if (!this.activeId) return;
-    this.elements.get(this.activeId)?.element.classList.remove('active');
+    this.#endTextEditing();
+    if (!this.selection.size && !this.activeId) return;
+    for (const id of this.selection) {
+      this.elements.get(id)?.element.classList.remove('active');
+    }
+    this.selection.clear();
     this.activeId = null;
     this.onSelect(null);
+  }
+
+  // Drop the caret and any highlighted letters inside a note. Switching tools
+  // (especially by shortcut) used to leave the blue native selection painted
+  // on the text even after Select was in hand.
+  endTextEditing() {
+    this.#endTextEditing();
+  }
+
+  #endTextEditing() {
+    const active = document.activeElement;
+    if (active?.isContentEditable && active.closest?.('.anno')) {
+      active.blur();
+    }
+
+    const sel = window.getSelection?.();
+    if (!sel?.rangeCount) return;
+    const node = sel.anchorNode;
+    const host = node?.nodeType === 1 ? node : node?.parentElement;
+    if (host?.closest?.('.anno .content')) sel.removeAllRanges();
   }
 
   #destroy(id) {
@@ -1015,15 +1657,39 @@ export class Annotations {
     const record = this.records.get(id);
     if (record) this.byPage.get(record.pageIndex)?.delete(id);
     this.records.delete(id);
+    this.selection.delete(id);
 
     if (this.activeId === id) {
-      this.activeId = null;
-      this.onSelect(null);
+      this.activeId = [...this.selection].at(-1) || null;
+      if (this.activeId) this.elements.get(this.activeId)?.element.classList.add('active');
+      this.onSelect(this.records.get(this.activeId) || null);
     }
   }
 }
 
 // --------------------------------------------------------------------- helpers
+
+// Joining sampled points with straight segments shows every corner once the
+// page is zoomed. Curving each pair through their midpoint costs nothing and
+// reads as a drawn line rather than a chain of ticks.
+export function inkPath(points) {
+  if (!points?.length) return '';
+  if (points.length === 1) return `M${points[0][0]} ${points[0][1]}l0 0`;
+
+  let d = `M${points[0][0]} ${points[0][1]}`;
+  for (let i = 1; i < points.length - 1; i += 1) {
+    const [cx, cy] = points[i];
+    const [nx, ny] = points[i + 1];
+    d += `Q${cx} ${cy} ${round2((cx + nx) / 2)} ${round2((cy + ny) / 2)}`;
+  }
+
+  const last = points[points.length - 1];
+  return `${d}L${last[0]} ${last[1]}`;
+}
+
+function round2(value) {
+  return Math.round(value * 100) / 100;
+}
 
 // Maps a point ratio from one view rotation's display space into another's.
 export function rotateRatio(x, y, fromRotation, toRotation) {
@@ -1060,7 +1726,22 @@ function angleDelta(from, to) {
 function cssFontFor(family) {
   if (family === 'times') return '"Times New Roman", Times, serif';
   if (family === 'courier') return '"Courier New", Courier, monospace';
+  if (family === 'handlee' || family === 'caveat') return 'Handlee, cursive';
+  if (family === 'indie') return '"Indie Flower", cursive';
+  if (family === 'patrick') return '"Patrick Hand", cursive';
   return 'Helvetica, Arial, sans-serif';
+}
+
+const HAND_FONTS = new Set(['patrick', 'caveat', 'indie', 'handlee']);
+
+// These hands have no italic or bold cut, and the export will not fake them, so
+// neither does the screen. Anything else would print differently from how it was typed.
+function italicAllowed(family) {
+  return !HAND_FONTS.has(family);
+}
+
+function boldAllowed(family) {
+  return !HAND_FONTS.has(family);
 }
 
 // Records written by the first version have no kind and no rot.
@@ -1070,4 +1751,8 @@ function normalise(record) {
 
 function clamp(value) {
   return Math.min(0.999, Math.max(0, value));
+}
+
+function rectsOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 }

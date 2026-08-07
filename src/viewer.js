@@ -15,6 +15,8 @@ import {
   downloadBytes,
   measureAllBaselineRatios,
   normaliseAngle,
+  supportsItalic,
+  supportsBold,
 } from './export.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('vendor/pdf.worker.min.mjs');
@@ -41,6 +43,8 @@ const ZOOM_SETTLE_MS = 160;
 const TOOL_KEYS = {
   v: 'select',
   t: 'text',
+  w: 'textbox',
+  p: 'pen',
   h: 'highlight',
   b: 'rect',
   o: 'ellipse',
@@ -109,13 +113,22 @@ async function boot() {
   wireFind();
   wireStamps();
   wireKeyboard();
+  wireTextSelection();
   wireDropTarget();
+
+  // The export measures where the baseline sits in every family it might stamp,
+  // and measuring a font that has not loaded returns the fallback's metrics.
+  document.fonts?.load('16px Handlee').catch(() => {});
+  document.fonts?.load('16px "Indie Flower"').catch(() => {});
+  document.fonts?.load('16px "Patrick Hand"').catch(() => {});
+
   await restoreStylePrefs();
 
   // Left encoded on purpose: for the redirect rule this fragment is the
   // original URL, and decoding it would corrupt percent-escaped paths.
   const hash = location.hash.slice(1);
   if (!hash) {
+    claimFocus();
     return showOverlay(
       'Open a PDF',
       'Drop a PDF anywhere on this window, or use the Open button above.'
@@ -160,6 +173,7 @@ async function loadUrl(url, name) {
 }
 
 async function loadBytes(bytes, name) {
+  discardPrintFrame();
   state.bytes = bytes;
   // Cleared before anything can autosave, so opening a second file cannot write
   // its blank state over the first one's notes.
@@ -196,6 +210,7 @@ async function loadBytes(bytes, name) {
   await restoreAnnotations();
   await restorePosition();
   seedHistory();
+  claimFocus();
 }
 
 // ----------------------------------------------------------------- document
@@ -625,6 +640,12 @@ function wireToolbar() {
   el.printBtn.addEventListener('click', () => runExport('print'));
   el.saveBtn.addEventListener('click', () => runExport('save'));
 
+  el.helpBtn.addEventListener('click', () => showShortcuts(true));
+  el.shortcutClose.addEventListener('click', () => showShortcuts(false));
+  el.shortcutDialog.addEventListener('click', (event) => {
+    if (event.target === el.shortcutDialog) showShortcuts(false);
+  });
+
   el.undoBtn.addEventListener('click', undo);
   el.redoBtn.addEventListener('click', redo);
   el.deleteBtn.addEventListener('click', () => annotations.deleteSelected());
@@ -648,10 +669,50 @@ function wireToolbar() {
   );
 
   // In select mode the annotation layer is transparent to the pointer, so a
-  // click on bare page never reaches it. Clear the selection from out here.
-  el.scroller.addEventListener('pointerdown', (event) => {
-    if (!event.target.closest('.anno')) annotations.deselect();
-  });
+  // click on bare page never reaches it. Empty-page drags become a marquee that
+  // gathers text notes; a plain click still clears the selection. PDF text
+  // selection on the text layer is left alone so highlight / underline still work.
+  //
+  // On the way down, not on the way back up: the same click can create a note
+  // and select it, and a deselect arriving afterwards would undo that. It looks
+  // like the new note is selected, since the caret is sitting in it, while the
+  // style controls quietly have nothing to act on.
+  el.scroller.addEventListener(
+    'pointerdown',
+    (event) => {
+      if (event.button !== 0) return;
+      if (event.target.closest('.anno')) return;
+      if (
+        event.target.closest(
+          '#toolbar, #findBar, #selectionBar, dialog, button, input, textarea, select, label, a'
+        )
+      ) {
+        return;
+      }
+
+      if (annotations.tool === 'select') {
+        // The text layer covers the whole page. Only real glyph spans need
+        // native PDF selection; treating any .textLayer hit as "selecting
+        // text" meant the marquee never started.
+        const onPdfGlyph = event.target.closest('.textLayer span');
+        if (onPdfGlyph) {
+          annotations.deselect();
+          return;
+        }
+        const pageNode = event.target.closest('.page');
+        if (!pageNode) {
+          annotations.deselect();
+          return;
+        }
+        const started = annotations.beginMarquee(Number(pageNode.dataset.index), event);
+        if (started) event.preventDefault();
+        return;
+      }
+
+      annotations.deselect();
+    },
+    true
+  );
 
   el.scroller.addEventListener(
     'wheel',
@@ -683,9 +744,12 @@ function wireTools() {
   for (const button of document.querySelectorAll('.tool')) {
     button.addEventListener('click', () => selectTool(button.dataset.tool));
   }
-  selectTool('text');
+  selectTool('select');
 
-  el.fontFamily.addEventListener('change', () => style({ font: el.fontFamily.value }));
+  el.fontFamily.addEventListener('change', () => {
+    style({ font: el.fontFamily.value });
+    syncFontControls(el.fontFamily.value);
+  });
   el.fontSize.addEventListener('change', () => {
     const fontPt = Math.min(96, Math.max(4, Number(el.fontSize.value) || 12));
     el.fontSize.value = String(fontPt);
@@ -717,35 +781,133 @@ function wireTools() {
 
   el.markColor.addEventListener('input', () => style({ color: el.markColor.value }));
   el.markSize.addEventListener('input', () => style({ sizePt: Number(el.markSize.value) }));
+
+  for (const [id, edge, label] of [
+    ['alignLeftBtn', 'left', 'Left edges lined up.'],
+    ['alignRightBtn', 'right', 'Right edges lined up.'],
+    ['alignTopBtn', 'top', 'Tops lined up.'],
+    ['alignBottomBtn', 'bottom', 'Bottoms lined up.'],
+  ]) {
+    el[id].addEventListener('click', () => {
+      if (annotations.alignTexts(edge)) flash(label);
+      else flash('Select at least two text notes first (drag a box, Ctrl+A, or Shift-click).', true);
+    });
+  }
+
+  for (const [id, align] of [
+    ['textAlignLeftBtn', 'left'],
+    ['textAlignCenterBtn', 'center'],
+    ['textAlignRightBtn', 'right'],
+  ]) {
+    el[id].addEventListener('click', () => {
+      style({ align });
+      syncTextAlignButtons(align);
+    });
+  }
+
+  keepSelectionOnControls();
+}
+
+// What is in the caret's way here is focus. A style control acts on whatever is
+// selected, so taking focus to reach one drops a text box mid-edit and can bin
+// an empty one outright. Buttons therefore refuse focus, which also leaves the
+// caret exactly where it was, and the controls that genuinely need it, colour
+// wells and sliders, give it back when they are done.
+let resumeTarget = null;
+
+function keepSelectionOnControls() {
+  for (const row of document.querySelectorAll('.options')) {
+    row.addEventListener('mousedown', (event) => {
+      if (event.target.closest('button')) event.preventDefault();
+    });
+    row.addEventListener('pointerdown', (event) => {
+      if (!event.target.closest('button')) rememberEditing();
+    });
+    row.addEventListener('change', resumeEditing);
+  }
+}
+
+function rememberEditing() {
+  const active = document.activeElement;
+  if (!active?.isContentEditable) {
+    resumeTarget = null;
+    return;
+  }
+
+  const selection = window.getSelection();
+  resumeTarget = {
+    node: active,
+    range: selection?.rangeCount ? selection.getRangeAt(0).cloneRange() : null,
+  };
+}
+
+function resumeEditing() {
+  const saved = resumeTarget;
+  resumeTarget = null;
+  if (!saved || !saved.node.isConnected) return;
+
+  saved.node.focus();
+  if (!saved.range) return;
+
+  // Focusing a contenteditable drops the caret at the start, which would send
+  // the next keystroke to the wrong end of the line.
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(saved.range);
 }
 
 function style(patch) {
   annotations.applyStyle(patch);
   syncColourInputs();
+  if ('background' in patch) syncBgSwatch(patch.background);
   saveStylePrefs();
 }
 
+// The colour input always shows a hue (browsers cannot show "empty"), so when
+// background is off we mark the swatch as none and cover the misleading colour.
+function syncBgSwatch(background) {
+  const none = !background;
+  el.bgSwatch.classList.toggle('is-none', none);
+  el.bgSwatch.title = none
+    ? 'Text background (none). Click to add a fill'
+    : 'Text background';
+  el.bgClear.setAttribute('aria-pressed', String(none));
+  el.bgClear.title = none ? 'No background (current)' : 'Clear background';
+  if (background) el.bgPicker.value = background;
+}
+
 function selectTool(tool) {
+  // The bar acts on selected words, and only Select can select them.
+  if (tool !== 'select') hideSelectionBar();
   annotations.setTool(tool);
   for (const button of document.querySelectorAll('.tool')) {
     button.classList.toggle('selected', button.dataset.tool === tool);
   }
 
-  // A selected annotation keeps its own controls on show; with nothing
-  // selected the row follows whichever tool is in hand.
-  if (annotations.selected) onSelectionChanged(annotations.selected);
-  else showOptionsFor(tool);
+  // Always leave the caret / letter highlight behind when changing tools.
+  // Select may keep the annotation selected for styling, but not the
+  // contenteditable focus that paints the blue text selection.
+  annotations.endTextEditing();
 
-  // Reaching for the signature tool with nothing saved has exactly one sensible
-  // next step, so take it rather than showing an empty strip.
-  if (tool === 'stamp' && annotations.stampIndex.size === 0) openSignDialog();
+  // A drawing tool needs its own options row (signature strip, thickness, …).
+  // Keeping a prior selection used to leave shapeOpts up while the signature
+  // ghost was already following the cursor, so the strip only appeared after
+  // place (when the new image became the selection).
+  if (tool !== 'select') {
+    annotations.deselect();
+    showOptionsFor(tool);
+  } else if (annotations.selected) {
+    onSelectionChanged(annotations.selected);
+  } else {
+    showOptionsFor(tool);
+  }
 }
 
 // The contextual row follows whichever tool is in hand, and switches to match a
 // selected annotation so its own settings are the ones on show.
 function showOptionsFor(tool) {
-  const group =
-    tool === 'text'
+  let group =
+    tool === 'text' || tool === 'textbox'
       ? 'textOpts'
       : tool === 'tick' || tool === 'cross'
         ? 'markOpts'
@@ -754,6 +916,16 @@ function showOptionsFor(tool) {
           : tool === 'select'
             ? null
             : 'shapeOpts';
+
+  // Select prefers the text align controls when this page has notes to line
+  // up; otherwise the signature strip stays reachable without a trip back to
+  // the Signature tool.
+  if (tool === 'select') {
+    if (annotations.hasTextOnPage(state.currentIndex)) group = 'textOpts';
+    else if (annotations.stampIndex.size > 0) group = 'stampOpts';
+  } else if (!group && annotations.stampIndex.size > 0) {
+    group = 'stampOpts';
+  }
 
   for (const id of ['textOpts', 'shapeOpts', 'markOpts', 'stampOpts']) {
     el[id].hidden = id !== group;
@@ -764,6 +936,16 @@ function showOptionsFor(tool) {
   const highlighting = tool === 'highlight';
   el.thicknessField.hidden = highlighting;
   el.shapeHint.textContent = highlighting ? 'Drag across what you want to highlight' : '';
+  el.textHint.textContent =
+    tool === 'textbox'
+      ? 'Drag out a box, then type'
+      : tool === 'text'
+        ? 'Clicks near a column snap to it'
+        : tool === 'select'
+          ? 'Drag a box over notes to select and align'
+          : '';
+
+  syncTextAlignGroup();
 }
 
 function onSelectionChanged(record) {
@@ -773,6 +955,10 @@ function onSelectionChanged(record) {
     // The slider was showing whatever was selected; hand it back to the size
     // the next signature will be placed at.
     el.stampSize.value = String(annotations.style.stampWidth);
+    syncLockAspectBtn(null);
+    syncBgSwatch(annotations.style.background);
+    syncAlignGroup();
+    syncTextAlignGroup();
     updateStampHint();
     return;
   }
@@ -792,22 +978,74 @@ function onSelectionChanged(record) {
   if (record.kind === 'text') {
     el.fontFamily.value = record.font;
     el.fontSize.value = String(record.fontPt);
+    syncFontControls(record.font);
     el.boldBtn.setAttribute('aria-pressed', String(Boolean(record.bold)));
     el.italicBtn.setAttribute('aria-pressed', String(Boolean(record.italic)));
     el.underlineBtn.setAttribute('aria-pressed', String(Boolean(record.underline)));
     el.strikeBtn.setAttribute('aria-pressed', String(Boolean(record.strike)));
     el.colorPicker.value = record.color;
-    if (record.background) el.bgPicker.value = record.background;
+    syncBgSwatch(record.background || null);
   } else if (record.kind === 'mark') {
     el.markColor.value = record.color;
     el.markSize.value = String(record.sizePt);
   } else if (record.kind === 'image') {
     el.stampSize.value = String(record.wRatio);
-    updateStampHint('Drag to move it, corners to resize');
-  } else if (record.kind === 'box' || record.kind === 'line') {
+    syncLockAspectBtn(record);
+    updateStampHint(
+      record.lockAspect === false
+        ? 'Aspect unlocked: corners stretch freely'
+        : 'Aspect locked: corners scale evenly'
+    );
+  } else if (record.kind === 'box' || record.kind === 'line' || record.kind === 'ink') {
     el.shapeColor.value = record.color;
     el.strokeWidth.value = String(record.strokeWidth);
   }
+
+  syncAlignGroup();
+  syncTextAlignGroup();
+}
+
+// Align is meaningless for one note. Keep the strip clear until a multi-select
+// (marquee, Shift-click, or Ctrl+A) has at least two text notes.
+function syncAlignGroup() {
+  let textCount = 0;
+  for (const id of annotations.selection) {
+    if (annotations.records.get(id)?.kind === 'text') textCount += 1;
+  }
+  el.alignGroup.hidden = textCount < 2;
+}
+
+// Left / center / right inside a text box. Point text has no box width, so
+// these only show for the Text box tool or a selected wrapping note.
+function syncTextAlignGroup() {
+  const record = annotations.selected;
+  const forBox = annotations.tool === 'textbox' || (record?.kind === 'text' && record.wrap);
+  el.textAlignGroup.hidden = !forBox;
+  if (!forBox) return;
+
+  const align =
+    (record?.kind === 'text' && record.wrap ? record.align : null) ||
+    annotations.style.align ||
+    'left';
+  syncTextAlignButtons(align);
+}
+
+function syncTextAlignButtons(align) {
+  el.textAlignLeftBtn.setAttribute('aria-pressed', String(align === 'left'));
+  el.textAlignCenterBtn.setAttribute('aria-pressed', String(align === 'center'));
+  el.textAlignRightBtn.setAttribute('aria-pressed', String(align === 'right'));
+}
+
+// A family with no italic or bold cut leaves the button showing a state it
+// cannot deliver, so those go grey rather than lying about what a press would do.
+function syncFontControls(family) {
+  const italicOk = supportsItalic(family);
+  el.italicBtn.disabled = !italicOk;
+  el.italicBtn.title = italicOk ? 'Italic (Ctrl+I)' : 'This handwriting font has no italic';
+
+  const boldOk = supportsBold(family);
+  el.boldBtn.disabled = !boldOk;
+  el.boldBtn.title = boldOk ? 'Bold (Ctrl+B)' : 'This handwriting font has no bold';
 }
 
 // One colour is shared across the tools, but a selected annotation keeps its
@@ -823,6 +1061,9 @@ function syncColourInputs() {
 
 function wireStamps() {
   el.stampAdd.addEventListener('click', openSignDialog);
+  el.imageAdd.addEventListener('click', () => el.photoPicker.click());
+  el.photoPicker.addEventListener('change', onPhotoPicked);
+  el.lockAspectBtn.addEventListener('click', toggleLockAspect);
   el.stampSize.addEventListener('input', () => {
     annotations.applyStyle({ stampWidth: Number(el.stampSize.value) });
     saveStylePrefs();
@@ -830,6 +1071,74 @@ function wireStamps() {
 
   wireSignDialog();
   refreshStamps();
+}
+
+async function onPhotoPicked() {
+  const file = el.photoPicker.files?.[0];
+  el.photoPicker.value = '';
+  if (!file || !state.bytes) return;
+
+  let bitmap;
+  try {
+    bitmap = await bitmapFromFile(file);
+  } catch {
+    flash('Could not read that image.', true);
+    return;
+  }
+
+  // Photos keep their background; keying is for signature scans only.
+  const built = buildFromBitmap(bitmap, { dropBackground: false });
+  bitmap.close?.();
+  if (!built) {
+    flash('That image looks empty.', true);
+    return;
+  }
+
+  const keep = Boolean(el.keepImage?.checked);
+  let stamp = {
+    id: crypto.randomUUID(),
+    name: (file.name || 'Image').replace(/\.[^.]+$/, '') || 'Image',
+    dataUrl: built.dataUrl,
+    aspect: built.aspect,
+  };
+
+  if (keep) {
+    stamp = await saveStamp({
+      name: stamp.name,
+      dataUrl: stamp.dataUrl,
+      aspect: stamp.aspect,
+    });
+    await refreshStamps(stamp.id);
+  } else {
+    // Session-only: placeable now, not written to the strip. Click chooses where.
+    annotations.registerStamp(stamp);
+    annotations.setActiveStamp(stamp.id);
+  }
+
+  annotations.deselect();
+  selectTool('stamp');
+  updateStampHint('Click the page to place it');
+  flash(keep ? 'Image ready. Click the page to place it (kept in strip).' : 'Image ready. Click the page to place it.');
+}
+
+function toggleLockAspect() {
+  const record = annotations.selected;
+  if (!record || record.kind !== 'image') return;
+  const next = record.lockAspect === false;
+  annotations.setLockAspect(next);
+  syncLockAspectBtn(annotations.selected);
+  updateStampHint(
+    next ? 'Aspect locked: corners scale evenly' : 'Aspect unlocked: corners stretch freely'
+  );
+}
+
+function syncLockAspectBtn(record) {
+  const image = record?.kind === 'image';
+  el.lockAspectBtn.hidden = !image;
+  if (!image) return;
+  const locked = record.lockAspect !== false;
+  el.lockAspectBtn.setAttribute('aria-pressed', String(locked));
+  el.lockAspectBtn.title = locked ? 'Unlock aspect ratio' : 'Lock aspect ratio';
 }
 
 // Saved signatures sit right in the toolbar as thumbnails rather than behind a
@@ -849,7 +1158,6 @@ async function refreshStamps(selectId) {
   for (const stamp of stamps) {
     const chip = document.createElement('button');
     chip.className = 'stamp-chip';
-    chip.title = stamp.name;
     chip.classList.toggle('selected', stamp.id === annotations.activeStampId);
 
     const image = document.createElement('img');
@@ -889,11 +1197,16 @@ async function refreshStamps(selectId) {
     chip.appendChild(drop);
 
     chip.addEventListener('click', () => {
+      // Either way in: Signature tool then chip, or chip first. Without taking
+      // the tool, a click on the page would only clear the selection.
       annotations.setActiveStamp(stamp.id);
+      annotations.deselect();
+      selectTool('stamp');
       for (const other of el.stampStrip.children) other.classList.remove('selected');
       chip.classList.add('selected');
       updateStampHint();
     });
+    chip.title = `Place "${stamp.name}"`;
 
     el.stampStrip.appendChild(chip);
   }
@@ -907,10 +1220,12 @@ function updateStampHint(message) {
     return;
   }
   const hasStamps = annotations.stampIndex.size > 0;
+  const imageSelected = annotations.selected?.kind === 'image';
   el.stampHint.textContent = hasStamps
     ? 'Click the page to place it'
-    : 'Add a signature to get started';
-  el.stampSizeField.hidden = !hasStamps;
+    : 'Add a signature or an image';
+  el.stampSizeField.hidden = !hasStamps && !imageSelected;
+  if (!imageSelected) syncLockAspectBtn(null);
 }
 
 // ------------------------------------------------------------ sign dialog
@@ -1295,14 +1610,199 @@ function projectRect(rect) {
   };
 }
 
+// ------------------------------------------------------ selecting page text
+
+// Swiping the highlighter across a line is a drawing gesture, and it lands
+// where the hand went rather than where the words are. Selecting the words and
+// acting on them is the other way round, and it is what anyone who has used a
+// browser expects, so both are offered.
+let selectionByPage = null;
+
+function wireTextSelection() {
+  // A drag is still a moving target, so the bar waits for the hand to stop.
+  document.addEventListener('pointerup', () => setTimeout(readTextSelection, 0));
+  document.addEventListener('keyup', (event) => {
+    if (event.key.startsWith('Arrow') || event.key === 'a') setTimeout(readTextSelection, 0);
+  });
+
+  // Anything that moves the page out from under the bar dismisses it, since a
+  // bar left pointing at nothing is worse than no bar.
+  el.scroller.addEventListener('scroll', hideSelectionBar, { passive: true });
+  window.addEventListener('resize', hideSelectionBar);
+  document.addEventListener('selectionchange', () => {
+    if (window.getSelection()?.isCollapsed) hideSelectionBar();
+  });
+
+  // preventDefault keeps the selection alive: without it the press clears the
+  // very thing the button is about to act on.
+  el.selectionBar.addEventListener('mousedown', (event) => event.preventDefault());
+  el.highlightSelection.addEventListener('click', () => applyToSelection('highlight'));
+  el.underlineSelection.addEventListener('click', () => applyToSelection('underline'));
+  el.strikeSelection.addEventListener('click', () => applyToSelection('strike'));
+}
+
+function readTextSelection() {
+  selectionByPage = selectedLinesByPage();
+  if (!selectionByPage) return hideSelectionBar();
+
+  // Anchored to the top line, which is where the eye already is.
+  let top = Infinity;
+  let left = 0;
+  for (const page of selectionByPage) {
+    for (const line of page.client) {
+      if (line.top >= top) continue;
+      top = line.top;
+      left = (line.left + line.right) / 2;
+    }
+  }
+
+  el.selectionBar.hidden = false;
+  const bar = el.selectionBar.getBoundingClientRect();
+  const margin = 8;
+  el.selectionBar.style.left = `${Math.min(Math.max(left, bar.width / 2 + margin), window.innerWidth - bar.width / 2 - margin)}px`;
+  // Below the line instead when the toolbar would swallow it.
+  const above = top - margin;
+  const floor = el.toolbar.getBoundingClientRect().bottom + bar.height + margin;
+  el.selectionBar.style.top = `${above < floor ? top + margin + bar.height : above}px`;
+}
+
+function hideSelectionBar() {
+  el.selectionBar.hidden = true;
+  selectionByPage = null;
+}
+
+function applyToSelection(kind) {
+  if (!selectionByPage) return;
+
+  for (const page of selectionByPage) {
+    annotations.markSelection(page.index, page.ratios, kind);
+  }
+
+  window.getSelection()?.removeAllRanges();
+  hideSelectionBar();
+}
+
+// The selection as lines, per page, in both viewport pixels for placing the bar
+// and page ratios for making the records.
+function selectedLinesByPage() {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
+
+  const range = selection.getRangeAt(0);
+  const node = range.commonAncestorContainer;
+  const host = node.nodeType === 1 ? node : node.parentElement;
+  // Text typed into a note is a different kind of selection entirely.
+  if (!host?.closest('#pages') || host.closest('.anno')) return null;
+
+  const byPage = new Map();
+  for (const rect of range.getClientRects()) {
+    if (rect.width < 1 || rect.height < 1) continue;
+    const index = pageUnder(rect);
+    if (index === null) continue;
+    if (!byPage.has(index)) byPage.set(index, []);
+    byPage.get(index).push(rect);
+  }
+  if (byPage.size === 0) return null;
+
+  const pages = [];
+  for (const [index, rects] of byPage) {
+    const client = mergeIntoLines(rects);
+    const box = state.mounted.get(index).layer.getBoundingClientRect();
+    pages.push({
+      index,
+      client,
+      ratios: client.map((line) => {
+        // A highlighter overshoots a little above and below the letters, and
+        // the glyph box on its own reads as a tight underline instead.
+        const pad = (line.bottom - line.top) * 0.12;
+        return {
+          x: (line.left - box.left) / box.width,
+          y: (line.top - pad - box.top) / box.height,
+          w: (line.right - line.left) / box.width,
+          h: (line.bottom - line.top + pad * 2) / box.height,
+        };
+      }),
+    });
+  }
+  return pages;
+}
+
+function pageUnder(rect) {
+  const x = (rect.left + rect.right) / 2;
+  const y = (rect.top + rect.bottom) / 2;
+  for (const [index, entry] of state.mounted) {
+    const box = entry.layer.getBoundingClientRect();
+    if (x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) return index;
+  }
+  return null;
+}
+
+// getClientRects hands back one box per run of text, several to a line and one
+// more wherever the styling changes. Merging them by line is what turns a
+// paragraph into a few clean bands rather than a mosaic of fragments.
+function mergeIntoLines(rects) {
+  const sorted = [...rects].sort((a, b) => a.top - b.top || a.left - b.left);
+  const lines = [];
+
+  for (const rect of sorted) {
+    const line = lines[lines.length - 1];
+    const overlap = line ? Math.min(line.bottom, rect.bottom) - Math.max(line.top, rect.top) : 0;
+    if (!line || overlap < Math.min(line.bottom - line.top, rect.height) * 0.5) {
+      lines.push({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom });
+      continue;
+    }
+    line.left = Math.min(line.left, rect.left);
+    line.right = Math.max(line.right, rect.right);
+    line.top = Math.min(line.top, rect.top);
+    line.bottom = Math.max(line.bottom, rect.bottom);
+  }
+
+  return lines;
+}
+
 // ------------------------------------------------------------------- keyboard
 
+// Every shortcut is bound to this document, so it only fires while this document
+// holds focus. A tab opened by the redirect can start with focus still on the
+// browser chrome, and the hidden print frame keeps focus after the print dialog
+// closes, both of which swallow the next Ctrl+P. Parking focus on the scroller
+// puts it back somewhere the shortcuts can see it.
+function claimFocus() {
+  const active = document.activeElement;
+  const busy =
+    active &&
+    active !== document.body &&
+    active !== el.scroller &&
+    active !== printFrame &&
+    active !== document.documentElement;
+  if (busy) return;
+
+  window.focus();
+  el.scroller.focus({ preventScroll: true });
+}
+
+function showShortcuts(open) {
+  el.shortcutDialog.hidden = !open;
+  if (open) el.shortcutClose.focus();
+  else claimFocus();
+}
+
 function wireKeyboard() {
+  // Coming back to the tab is the other moment focus can still be sitting in
+  // the print frame.
+  window.addEventListener('focus', () => {
+    if (document.activeElement === printFrame) claimFocus();
+  });
+
   document.addEventListener('keydown', (event) => {
     // Modals come first: Escape has to work even with a field focused inside.
     if (event.key === 'Escape' && !el.signDialog.hidden) {
       event.preventDefault();
       return closeSignDialog();
+    }
+    if (event.key === 'Escape' && !el.shortcutDialog.hidden) {
+      event.preventDefault();
+      return showShortcuts(false);
     }
 
     const typing =
@@ -1324,11 +1824,31 @@ function wireKeyboard() {
         event.preventDefault();
         return toggleFind();
       }
-      if (key === 'z' && !typing) {
+      // Select every text note on the page so they can be aligned as a set.
+      // Left alone while typing so Ctrl+A still selects the letters in a box.
+      if (key === 'a' && !typing) {
+        event.preventDefault();
+        if (annotations.tool !== 'select') selectTool('select');
+        if (annotations.selectAllText(state.currentIndex)) {
+          flash(
+            annotations.selection.size === 1
+              ? '1 text note selected.'
+              : `${annotations.selection.size} text notes selected.`
+          );
+        } else {
+          flash('No text notes on this page.', true);
+        }
+        return;
+      }
+      // Annotation history wins over the browser's contenteditable undo. With the
+      // caret in a text box, native Ctrl+Z often looked broken (empty undo stack
+      // or only one keystroke) while the same shortcut worked once the box only
+      // had a selection outline. Always drive our own stack here.
+      if (key === 'z') {
         event.preventDefault();
         return event.shiftKey ? redo() : undo();
       }
-      if (key === 'y' && !typing) {
+      if (key === 'y') {
         event.preventDefault();
         return redo();
       }
@@ -1363,12 +1883,17 @@ function wireKeyboard() {
       return;
     }
     if (event.key === 'Escape') {
+      if (!el.selectionBar.hidden) hideSelectionBar();
       if (!el.findBar.hidden) closeFind();
       return;
     }
     if (event.key === 'r' || event.key === 'R') {
       event.preventDefault();
       return rotateView();
+    }
+    if (event.key === '?') {
+      event.preventDefault();
+      return showShortcuts(el.shortcutDialog.hidden);
     }
 
     const tool = TOOL_KEYS[event.key.toLowerCase()];
@@ -1557,7 +2082,10 @@ async function restorePosition() {
 
 async function restoreStylePrefs() {
   const { annoStyle } = await chrome.storage.local.get('annoStyle');
-  if (!annoStyle) return;
+  if (!annoStyle) {
+    syncBgSwatch(annotations.style.background || null);
+    return;
+  }
 
   // Highlighter opacity no longer has a control, so a value saved back when it
   // did must not stick: it would leave highlights wrong with no way to fix them.
@@ -1572,8 +2100,9 @@ async function restoreStylePrefs() {
   el.strokeWidth.value = String(annoStyle.strokeWidth ?? 1.5);
   el.markSize.value = String(annoStyle.sizePt ?? 18);
   el.stampSize.value = String(annoStyle.stampWidth ?? 0.24);
-  if (annoStyle.background) el.bgPicker.value = annoStyle.background;
+  syncBgSwatch(annoStyle.background || null);
   syncColourInputs();
+  syncFontControls(el.fontFamily.value);
 }
 
 function saveStylePrefs() {
@@ -1581,6 +2110,32 @@ function saveStylePrefs() {
 }
 
 // -------------------------------------------------------------------- export
+
+async function loadAsset(path) {
+  const response = await fetch(chrome.runtime.getURL(path));
+  if (!response.ok) throw new Error(`Could not read ${path}`);
+  return response.arrayBuffer();
+}
+
+// Three quarters of a megabyte of font parser, needed only to embed a font that
+// is not one of the fourteen every reader already has. Loading it on demand
+// keeps it out of the way of opening a document, which is what people are
+// actually waiting for.
+let fontkitPromise = null;
+
+function getFontkit() {
+  if (globalThis.fontkit) return globalThis.fontkit;
+  if (fontkitPromise) return fontkitPromise;
+
+  fontkitPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = chrome.runtime.getURL('vendor/fontkit.umd.min.js');
+    script.onload = () => resolve(globalThis.fontkit);
+    script.onerror = () => reject(new Error('Could not load the font embedder'));
+    document.head.appendChild(script);
+  });
+  return fontkitPromise;
+}
 
 async function runExport(mode) {
   if (!state.bytes) return;
@@ -1598,6 +2153,8 @@ async function runExport(mode) {
       ? await stampPdf(state.bytes, records, {
           baselineRatios: measureAllBaselineRatios(),
           stamps: annotations.stampIndex,
+          loadAsset,
+          getFontkit,
         })
       : state.bytes;
 
@@ -1623,11 +2180,45 @@ async function runExport(mode) {
 // Printing through a hidden frame goes straight to the print dialog. If the
 // PDF plugin declines to load there, fall back to a normal tab.
 let printFrame = null;
+let printFocusTimer = null;
+
+// The frame has to be handed keyboard focus for the plugin to print, and Chrome
+// leaves it there once the dialog closes. A second Ctrl+P then goes to the
+// plugin, which reprints its own stale copy instead of running an export, which
+// is why the shortcut worked once and then quietly printed the wrong thing.
+// Nothing is removed while the dialog is up: focus is only taken back once the
+// page itself has it again.
+function watchPrintFocus() {
+  stopWatchingPrintFocus();
+
+  let ticks = 0;
+  printFocusTimer = setInterval(() => {
+    const stillOurs = printFrame?.isConnected && document.activeElement === printFrame;
+    if (!stillOurs || ticks++ > 600) return stopWatchingPrintFocus();
+    if (!document.hasFocus()) return;
+
+    claimFocus();
+    stopWatchingPrintFocus();
+  }, 500);
+}
+
+function stopWatchingPrintFocus() {
+  clearInterval(printFocusTimer);
+  printFocusTimer = null;
+}
+
+// A frame left over from an earlier document would print that document, so it
+// goes as soon as a new file is opened.
+function discardPrintFrame() {
+  stopWatchingPrintFocus();
+  printFrame?.remove();
+  printFrame = null;
+}
 
 async function printBytes(bytes) {
   const url = toPdfBlobUrl(bytes);
 
-  printFrame?.remove();
+  discardPrintFrame();
   printFrame = document.createElement('iframe');
   printFrame.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;opacity:0;border:0';
   printFrame.src = url;
@@ -1649,7 +2240,9 @@ async function printBytes(bytes) {
 
   if (opened) {
     flash('Print dialog opened.');
+    watchPrintFocus();
   } else {
+    discardPrintFrame();
     await chrome.tabs.create({ url });
     flash('Print-ready copy opened in a new tab. Press Ctrl+P there.');
   }
