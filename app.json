@@ -1,0 +1,35 @@
+{
+  "slug": "write-on-pdf",
+  "name": "Write on PDF",
+  "kind": "chrome-extension",
+  "publicRepo": "https://github.com/TheCodeKP/Write-on-PDF",
+  "subtreePrefix": "apps/write-on-pdf",
+
+  "demo": {
+    "entry": "src/viewer.html",
+    "shimBefore": "<script src=\"../vendor/pdf-lib.min.js\"></script>",
+    "faviconBefore": "<link rel=\"stylesheet\" href=\"viewer.css\">",
+    "src": [
+      "viewer.html",
+      "viewer.css",
+      "viewer.js",
+      "annotations.js",
+      "find.js",
+      "stamps.js",
+      "export.js",
+      "signature-tool.png"
+    ],
+    "vendor": [
+      "pdf.min.mjs",
+      "pdf.worker.min.mjs",
+      "pdf-lib.min.js",
+      "fontkit.umd.min.js",
+      "fonts/PatrickHand-Regular.ttf",
+      "fonts/IndieFlower-Regular.ttf",
+      "fonts/Handlee-Regular.ttf",
+      "fonts/OFL.txt"
+    ],
+    "vendorDirs": ["standard_fonts"],
+    "icons": ["icon48.png"]
+  }
+}

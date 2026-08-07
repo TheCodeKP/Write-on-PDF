@@ -14,6 +14,9 @@ const capturedBlobs = new Map(); // blob: URL -> { b64, size, ts }
 const pendingSources = new Map(); // key -> { kind, b64|url, name, ts }
 const captureWaiters = new Map(); // blob: URL -> resolve[]
 const bypassTabs = new Map(); // tabId -> { expiry, url, ruleId }
+// blob: navigations often skip webNavigation events, so once we have the bytes
+// we also claim any tab that is already showing that URL.
+const claimedBlobTabs = new Set(); // `${tabId}:${blobUrl}`
 
 async function getSettings() {
   const stored = await chrome.storage.local.get(DEFAULTS);
@@ -117,6 +120,63 @@ async function storeCapture(url, b64, size) {
     captureWaiters.delete(url);
     waiters.forEach((resolve) => resolve(rec));
   }
+
+  // Do not wait for onBeforeNavigate. Chrome often never reports blob: PDF
+  // navigations there, which left captured bytes stranded.
+  await claimOpenBlobTabs(url, b64);
+  // The tab often appears a beat after createObjectURL. Poll briefly.
+  void pollClaimBlobTab(url, b64);
+}
+
+async function pollClaimBlobTab(blobUrl, b64) {
+  const deadline = Date.now() + 4000;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    let tabs = [];
+    try {
+      tabs = await chrome.tabs.query({});
+    } catch {
+      return;
+    }
+    const match = tabs.find((tab) => (tab.url || tab.pendingUrl || '') === blobUrl);
+    if (!match) continue;
+    await claimBlobTab(match.id, blobUrl, b64);
+    return;
+  }
+}
+
+async function claimOpenBlobTabs(blobUrl, b64) {
+  const { takeover } = await getSettings();
+  if (!takeover) return;
+
+  let tabs = [];
+  try {
+    tabs = await chrome.tabs.query({});
+  } catch {
+    return;
+  }
+
+  for (const tab of tabs) {
+    const seen = tab.url || tab.pendingUrl || '';
+    if (seen === blobUrl) await claimBlobTab(tab.id, blobUrl, b64);
+  }
+}
+
+async function claimBlobTab(tabId, blobUrl, b64) {
+  const claimKey = `${tabId}:${blobUrl}`;
+  if (claimedBlobTabs.has(claimKey)) return;
+  if (shouldSkip(tabId, blobUrl)) return;
+
+  claimedBlobTabs.add(claimKey);
+  await openInViewer(tabId, { kind: 'bytes', b64, name: 'document.pdf' });
+}
+
+async function claimBlobTabIfCaptured(tabId, blobUrl) {
+  const { takeover } = await getSettings();
+  if (!takeover) return;
+  const captured = await getCapture(blobUrl);
+  if (!captured?.b64) return;
+  await claimBlobTab(tabId, blobUrl, captured.b64);
 }
 
 async function getCapture(url) {
@@ -399,6 +459,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return sendResponse({ ok: true });
       }
 
+      case 'pdf-blob-open': {
+        const captured = await getCapture(message.url);
+        if (captured?.b64) {
+          await claimOpenBlobTabs(message.url, captured.b64);
+          void pollClaimBlobTab(message.url, captured.b64);
+        } else {
+          // Bytes may still be in flight from createObjectURL.
+          void waitForCapture(message.url, 4000).then((rec) => {
+            if (rec?.b64) {
+              claimOpenBlobTabs(message.url, rec.b64);
+              pollClaimBlobTab(message.url, rec.b64);
+            }
+          });
+        }
+        return sendResponse({ ok: true });
+      }
+
       // Deliberately not dropped here, so reloading the viewer tab still works.
       // The TTL sweep clears it instead.
       case 'get-source':
@@ -438,6 +515,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   })();
 
   return true; // responses are asynchronous
+});
+
+// blob: PDF tabs often skip webNavigation. Claim them from the tabs API instead.
+chrome.tabs.onCreated.addListener((tab) => {
+  const seen = tab.pendingUrl || tab.url || '';
+  if (seen.startsWith('blob:')) void claimBlobTabIfCaptured(tab.id, seen);
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  const seen = changeInfo.url || tab.pendingUrl || '';
+  if (seen.startsWith('blob:')) void claimBlobTabIfCaptured(tabId, seen);
 });
 
 // Last, so every listener above is registered synchronously before this yields.

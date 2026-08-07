@@ -20,3 +20,22 @@ document.addEventListener('__writeOnPdfCapture', (event) => {
     // Extension context was invalidated (reloaded during development).
   }
 });
+
+document.addEventListener('__writeOnPdfOpen', (event) => {
+  let payload;
+  try {
+    payload = JSON.parse(event.detail);
+  } catch {
+    return;
+  }
+  if (!payload?.url?.startsWith('blob:')) return;
+
+  try {
+    chrome.runtime.sendMessage(
+      { type: 'pdf-blob-open', url: payload.url },
+      () => void chrome.runtime.lastError
+    );
+  } catch {
+    // Extension context was invalidated (reloaded during development).
+  }
+});

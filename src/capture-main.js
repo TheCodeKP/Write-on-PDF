@@ -7,6 +7,7 @@
 
 (() => {
   const EVENT = '__writeOnPdfCapture';
+  const OPEN_EVENT = '__writeOnPdfOpen';
   const MAX_BYTES = 100 * 1024 * 1024;
 
   if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') return;
@@ -63,4 +64,25 @@
   };
 
   URL.createObjectURL.__writeOnPdf = true;
+
+  // Tell the background the page is about to open a blob URL, so it can claim
+  // the tab even when webNavigation never fires for blob: PDFs.
+  if (typeof window.open === 'function' && !window.open.__writeOnPdf) {
+    const originalOpen = window.open.bind(window);
+    window.open = function open(url, ...rest) {
+      try {
+        if (typeof url === 'string' && url.startsWith('blob:')) {
+          document.dispatchEvent(
+            new CustomEvent(OPEN_EVENT, {
+              detail: JSON.stringify({ url }),
+            })
+          );
+        }
+      } catch {
+        // Ignore and open normally.
+      }
+      return originalOpen(url, ...rest);
+    };
+    window.open.__writeOnPdf = true;
+  }
 })();

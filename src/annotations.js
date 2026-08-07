@@ -1001,6 +1001,12 @@ export class Annotations {
       if (event.key === 'Escape') {
         event.preventDefault();
         content.blur();
+        return;
+      }
+      // Stay in the note and indent, instead of jumping to the next control.
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        document.execCommand('insertText', false, '\t');
       }
     });
   }

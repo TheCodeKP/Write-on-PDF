@@ -891,6 +891,7 @@ select:focus {
   min-height: 1.2em;
   outline: none;
   white-space: pre;
+  tab-size: 4;
   caret-color: currentColor;
 }
 
@@ -928,6 +929,7 @@ select:focus {
 .anno-wrap .content {
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  tab-size: 4;
 }
 
 .anno-wrap .content {
