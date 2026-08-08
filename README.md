@@ -118,4 +118,4 @@ Found a PDF it handles badly, or want a tool that is missing? Open an [issue](ht
 
 GPL-3.0. See [LICENSE](LICENSE).
 
-PDF.js, pdf-lib and fontkit ship under `vendor/` with their own licences. The handwriting fonts are under the Open Font Licence; the licence travels with them in `vendor/fonts/OFL.txt`, and `tools/fetch-fonts.mjs` rebuilds the files from Google Fonts.
+PDF.js, pdf-lib and fontkit ship under `vendor/` with their own licences. The handwriting fonts are under the Open Font Licence; the licence travels with them in `vendor/fonts/OFL.txt`.
