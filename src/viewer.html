@@ -51,13 +51,13 @@
 
   <header id="toolbar">
     <div class="bar">
-      <div class="brand">
+      <a class="brand" href="https://codekp.com/apps/write-on-pdf/" target="_blank" rel="noopener noreferrer" title="Write on PDF on codekp.com">
         <img class="brand-mark" src="../icons/icon48.png" alt="" width="24" height="24">
         <span class="brand-text">
           <span class="brand-name">Write on PDF</span>
           <span class="brand-by">by CodeKP</span>
         </span>
-      </div>
+      </a>
 
       <span class="sep"></span>
 
@@ -362,8 +362,16 @@
     <div class="overlay-card">
       <h1 id="overlayTitle">Open a PDF</h1>
       <p id="overlayText">Drop a PDF anywhere on this window, or use the Open button above.</p>
-      <div id="dropTarget">Drop PDF here</div>
+      <div id="dropTarget" role="button" tabindex="0" title="Open a PDF from disk">Drop PDF here</div>
     </div>
+  </div>
+
+  <div id="openBeckon" class="open-beckon" hidden aria-hidden="true">
+    <svg id="openBeckonSvg" class="open-beckon-svg" aria-hidden="true">
+      <path id="openBeckonStroke" class="open-beckon-stroke"/>
+      <path id="openBeckonHead" class="open-beckon-head"/>
+    </svg>
+    <span id="openBeckonLabel" class="open-beckon-label">Open a PDF here</span>
   </div>
 
   <div id="passwordModal" class="modal" hidden>
@@ -377,12 +385,26 @@
     </form>
   </div>
 
+  <div id="unlockWarnModal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-labelledby="unlockWarnTitle" aria-describedby="unlockWarnText">
+      <h2 id="unlockWarnTitle">Saving removes the password</h2>
+      <p id="unlockWarnText">
+        The downloaded file will not ask for a password. Anyone who has that file can open it.
+      </p>
+      <div class="modal-actions">
+        <button type="button" id="unlockWarnCancel">Cancel</button>
+        <button type="button" class="primary" id="unlockWarnConfirm">Save unlocked file</button>
+      </div>
+    </div>
+  </div>
+
   <div id="status"></div>
 
   <input type="file" id="filePicker" accept="application/pdf,.pdf" hidden>
   <input type="file" id="imagePicker" accept="image/png,image/jpeg,image/webp" hidden>
   <input type="file" id="photoPicker" accept="image/png,image/jpeg,image/webp" hidden>
 
+  <script src="../vendor/pdf-lib-cantoo.min.js"></script>
   <script src="../vendor/pdf-lib.min.js"></script>
   <script type="module" src="viewer.js"></script>
 </body>

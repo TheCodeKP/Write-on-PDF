@@ -77,6 +77,7 @@ const state = {
   fileName: 'document.pdf',
   originalUrl: null,
   docKey: null,
+  password: null, // set when PDF.js asks; used to decrypt before export
   generation: 0, // bumped on zoom/rotate so stale renders are discarded
   ready: false,
 };
@@ -179,6 +180,7 @@ async function loadBytes(bytes, name) {
   // Cleared before anything can autosave, so opening a second file cannot write
   // its blank state over the first one's notes.
   state.docKey = null;
+  state.password = null;
   state.fileName = name || 'document.pdf';
   el.fileName.textContent = state.fileName;
   el.fileName.title = state.fileName;
@@ -192,8 +194,12 @@ async function loadBytes(bytes, name) {
 
   task.onPassword = (submit, reason) => {
     askPassword(reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD).then((password) => {
-      if (password === null) task.destroy();
-      else submit(password);
+      if (password === null) {
+        task.destroy();
+        return;
+      }
+      state.password = password;
+      submit(password);
     });
   };
 
@@ -623,6 +629,18 @@ function wireToolbar() {
     const file = el.filePicker.files?.[0];
     if (file) await openFile(file);
     el.filePicker.value = '';
+  });
+
+  const openFromDropTarget = () => el.filePicker.click();
+  el.dropTarget.addEventListener('click', openFromDropTarget);
+  el.dropTarget.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    openFromDropTarget();
+  });
+
+  window.addEventListener('resize', () => {
+    if (document.body.classList.contains('beckon-open')) positionOpenBeckon();
   });
 
   el.zoomIn.addEventListener('click', () => setScale(state.scale * 1.15));
@@ -2317,6 +2335,15 @@ function getFontkit() {
 async function runExport(mode) {
   if (!state.bytes) return;
 
+  // Password in memory means state.bytes is still the encrypted original.
+  // After the first successful unlock export we replace bytes and clear this.
+  const stillEncrypted = state.password !== null && state.password !== undefined;
+  // Warn only while Save would strip a password that is still on the file.
+  if (mode === 'save' && stillEncrypted) {
+    const proceed = await confirmUnlockOnSave();
+    if (!proceed) return;
+  }
+
   el.printBtn.disabled = true;
   el.saveBtn.disabled = true;
   el.progress.classList.add('busy');
@@ -2324,14 +2351,16 @@ async function runExport(mode) {
 
   try {
     const records = annotations.serialize();
-    // With nothing added there is nothing to stamp, and re-saving through
-    // pdf-lib would only risk changing a file that is already correct.
-    const bytes = records.length
+    // Locked files must go through stamp/decrypt even with no notes, otherwise
+    // Save would download the still-encrypted original.
+    const bytes = records.length || stillEncrypted
       ? await stampPdf(state.bytes, records, {
           baselineRatios: measureAllBaselineRatios(),
           stamps: annotations.stampIndex,
           loadAsset,
           getFontkit,
+          pdfJsDoc: state.doc,
+          password: state.password,
         })
       : state.bytes;
 
@@ -2344,6 +2373,11 @@ async function runExport(mode) {
     } else {
       await printBytes(bytes);
     }
+    // Save and Print share this handoff: session continues on plaintext bytes.
+    if (stillEncrypted) {
+      state.bytes = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+      state.password = null;
+    }
   } catch (error) {
     flash(`Export failed: ${error.message || error}`, true);
   } finally {
@@ -2352,6 +2386,31 @@ async function runExport(mode) {
     el.progress.classList.remove('busy');
     el.progressBar.style.width = '0';
   }
+}
+
+async function confirmUnlockOnSave() {
+  // Only called while stillEncrypted; later Saves skip this entirely.
+  return askUnlockSaveWarning();
+}
+
+function askUnlockSaveWarning() {
+  return new Promise((resolve) => {
+    el.unlockWarnModal.hidden = false;
+    el.unlockWarnConfirm.focus();
+
+    const finish = (value) => {
+      el.unlockWarnModal.hidden = true;
+      el.unlockWarnConfirm.removeEventListener('click', onConfirm);
+      el.unlockWarnCancel.removeEventListener('click', onCancel);
+      resolve(value);
+    };
+
+    const onConfirm = () => finish(true);
+    const onCancel = () => finish(false);
+
+    el.unlockWarnConfirm.addEventListener('click', onConfirm);
+    el.unlockWarnCancel.addEventListener('click', onCancel);
+  });
 }
 
 // Printing through a hidden frame goes straight to the print dialog. If the
@@ -2463,11 +2522,55 @@ function showOverlay(title, text) {
   el.overlayText.textContent = text;
   el.overlay.classList.add('show');
   el.scroller.style.display = 'none';
+  setOpenBeckon(title === 'Open a PDF');
 }
 
 function hideOverlay() {
   el.overlay.classList.remove('show');
   el.scroller.style.display = '';
+  setOpenBeckon(false);
+}
+
+function setOpenBeckon(on) {
+  document.body.classList.toggle('beckon-open', on);
+  el.openBtn.classList.toggle('beckon', on);
+  el.openBeckon.hidden = !on;
+  el.openBeckon.setAttribute('aria-hidden', on ? 'false' : 'true');
+  if (on) positionOpenBeckon();
+}
+
+function positionOpenBeckon() {
+  const btn = el.openBtn.getBoundingClientRect();
+  const chromeBottom = el.toolbar.getBoundingClientRect().bottom;
+  const tipX = btn.left + btn.width / 2;
+  const tipY = btn.bottom - 1;
+  // Soft S-curve from below the tool row up into the Open button.
+  const startX = tipX - 10;
+  const startY = chromeBottom + 36;
+  const c1x = tipX - 34;
+  const c1y = startY - 6;
+  const c2x = tipX + 10;
+  const c2y = tipY + 30;
+
+  el.openBeckonStroke.setAttribute(
+    'd',
+    `M ${startX} ${startY} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${tipX} ${tipY}`
+  );
+  el.openBeckonStroke.setAttribute('pathLength', '1');
+  el.openBeckonHead.setAttribute(
+    'd',
+    `M ${tipX - 6} ${tipY + 10} L ${tipX} ${tipY} L ${tipX + 6} ${tipY + 10}`
+  );
+  el.openBeckonLabel.style.left = `${tipX}px`;
+  el.openBeckonLabel.style.top = `${startY + 6}px`;
+
+  el.openBeckonStroke.style.animation = 'none';
+  el.openBeckonHead.style.animation = 'none';
+  el.openBeckonLabel.style.animation = 'none';
+  void el.openBeckonStroke.offsetWidth;
+  el.openBeckonStroke.style.animation = '';
+  el.openBeckonHead.style.animation = '';
+  el.openBeckonLabel.style.animation = '';
 }
 
 function fail(message) {

@@ -139,8 +139,22 @@ body {
   align-items: center;
   gap: 8px;
   flex: none;
-  padding-left: 2px;
+  padding: 2px 4px 2px 2px;
+  margin: -2px 0 -2px -2px;
+  border-radius: var(--radius);
+  color: inherit;
+  text-decoration: none;
   user-select: none;
+  cursor: pointer;
+}
+
+.brand:hover {
+  background: rgb(255 255 255 / 6%);
+}
+
+.brand:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .brand-mark {
@@ -1087,7 +1101,16 @@ select:focus {
   border: 2px dashed var(--line);
   border-radius: 12px;
   color: var(--muted);
+  cursor: pointer;
   transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+#dropTarget:hover,
+#dropTarget:focus-visible {
+  border-color: var(--accent);
+  color: var(--text);
+  background: rgb(59 130 246 / 10%);
+  outline: none;
 }
 
 body.dragging #dropTarget {
@@ -1103,6 +1126,131 @@ body.dragging::after {
   z-index: 40;
   border: 3px solid var(--accent);
   pointer-events: none;
+}
+
+/* Empty editor: pulse Open and draw a curved cue toward it. */
+#openBtn.beckon {
+  color: #93c5fd;
+  background: rgb(59 130 246 / 16%);
+  border-color: rgb(59 130 246 / 50%);
+  animation: open-beckon-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes open-beckon-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(59 130 246 / 0%);
+    background: rgb(59 130 246 / 10%);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgb(59 130 246 / 22%);
+    background: rgb(59 130 246 / 22%);
+  }
+}
+
+.open-beckon {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  pointer-events: none;
+  color: #93c5fd;
+}
+
+.open-beckon-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.open-beckon-stroke,
+.open-beckon-head {
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+.open-beckon-stroke {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: open-beckon-draw 1.2s ease forwards, open-beckon-drift 2.6s ease-in-out 1.2s infinite;
+}
+
+.open-beckon-head {
+  opacity: 0;
+  animation: open-beckon-head-in 0.28s ease 1s forwards, open-beckon-drift 2.6s ease-in-out 1.2s infinite;
+}
+
+.open-beckon-label {
+  position: absolute;
+  max-width: 160px;
+  padding: 5px 10px;
+  border: 1px solid rgb(59 130 246 / 30%);
+  border-radius: var(--radius);
+  background: rgb(33 36 43 / 94%);
+  color: var(--text);
+  font: 500 12px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  letter-spacing: 0.01em;
+  text-align: center;
+  white-space: nowrap;
+  box-shadow: 0 8px 22px rgb(0 0 0 / 38%);
+  transform: translateX(-50%);
+  animation: open-beckon-fade 0.35s ease 1.05s both;
+}
+
+@keyframes open-beckon-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes open-beckon-head-in {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes open-beckon-fade {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 5px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@keyframes open-beckon-drift {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #openBtn.beckon {
+    animation: none;
+  }
+
+  .open-beckon-stroke,
+  .open-beckon-head,
+  .open-beckon-label {
+    animation: none;
+    opacity: 1;
+    stroke-dashoffset: 0;
+    transform: none;
+  }
+
+  .open-beckon-label {
+    transform: translateX(-50%);
+  }
 }
 
 /* -------------------------------------------------------------------- modal */
@@ -1152,6 +1300,13 @@ body.dragging::after {
   font-size: 15px;
   font-weight: 600;
   margin: 0 0 14px;
+}
+
+.modal-card p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted, #9ca3af);
 }
 
 .modal-card input[type='password'] {

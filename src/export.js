@@ -126,11 +126,117 @@ export function measureAllBaselineRatios() {
   return ratios;
 }
 
-export async function stampPdf(bytes, annotations, options = {}) {
-  const { baselineRatios = {}, stamps = new Map(), loadAsset = null, getFontkit = null } = options;
-  const { PDFDocument, StandardFonts, rgb, degrees, LineCapStyle } = globalThis.PDFLib;
+const MAX_EXPORT_CANVAS_PIXELS = 16_777_216;
 
-  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+export async function stampPdf(bytes, annotations, options = {}) {
+  const { pdfJsDoc = null, password = null } = options;
+  // pdf-lib console.warns on quirky PDF objects; some browsers surface those
+  // as extension Errors.
+  return withQuietPdfLibWarns(async () => {
+    const doc = await loadDocumentForStamp(bytes, password, pdfJsDoc);
+    return applyAnnotationsAndSave(doc, annotations, options);
+  });
+}
+
+// Swallow only pdf-lib's recoverable parser noise. Other warns still pass through.
+async function withQuietPdfLibWarns(fn) {
+  const original = console.warn;
+  console.warn = (...args) => {
+    const text = args.map((part) => (typeof part === 'string' ? part : String(part))).join(' ');
+    if (/Trying to parse invalid object|Invalid object ref/i.test(text)) return;
+    original.apply(console, args);
+  };
+  try {
+    return await fn();
+  } finally {
+    console.warn = original;
+  }
+}
+
+// Decrypt with cantoo (password support), then stamp with Hopding pdf-lib so
+// handwriting subsets encode correctly. Raster is last resort only.
+async function loadDocumentForStamp(bytes, password, pdfJsDoc) {
+  const { PDFDocument } = globalThis.PDFLib || {};
+  const CantooDocument = globalThis.PDFLibCantoo?.PDFDocument;
+  if (!PDFDocument) throw new Error('PDFLib.PDFDocument missing');
+
+  if (password !== null && password !== undefined && CantooDocument) {
+    try {
+      const unlocked = await CantooDocument.load(bytes, { password });
+      const plain = await unlocked.save({ updateFieldAppearances: false });
+      return await PDFDocument.load(plain);
+    } catch {
+      // Fall through to the normal load paths.
+    }
+  }
+
+  try {
+    return await PDFDocument.load(bytes);
+  } catch {
+    if (CantooDocument) {
+      try {
+        const unlocked = await CantooDocument.load(bytes, { password: '' });
+        const plain = await unlocked.save({ updateFieldAppearances: false });
+        return await PDFDocument.load(plain);
+      } catch {
+        // continue
+      }
+    }
+    try {
+      const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+      // ignoreEncryption can return a shell that throws when pages are read.
+      doc.getPageCount();
+      return doc;
+    } catch (error) {
+      if (!pdfJsDoc) throw error;
+      return buildDocFromPdfJs(pdfJsDoc);
+    }
+  }
+}
+
+// Raster page images from PDF.js, then stamp vector annotations on top so notes
+// stay sharp. Page content becomes a bitmap; the lock is gone in the saved file.
+async function buildDocFromPdfJs(pdfJsDoc) {
+  const { PDFDocument } = globalThis.PDFLib;
+  const doc = await PDFDocument.create();
+
+  for (let index = 0; index < pdfJsDoc.numPages; index += 1) {
+    const page = await pdfJsDoc.getPage(index + 1);
+    const base = page.getViewport({ scale: 1 });
+    let scale = 2;
+    while (base.width * scale * base.height * scale > MAX_EXPORT_CANVAS_PIXELS && scale > 0.75) {
+      scale -= 0.25;
+    }
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.floor(viewport.width));
+    canvas.height = Math.max(1, Math.floor(viewport.height));
+    await page.render({
+      canvasContext: canvas.getContext('2d', { alpha: false }),
+      viewport,
+    }).promise;
+
+    const png = await canvasPngBytes(canvas);
+    const image = await doc.embedPng(png);
+    const pdfPage = doc.addPage([base.width, base.height]);
+    pdfPage.drawImage(image, { x: 0, y: 0, width: base.width, height: base.height });
+  }
+
+  return doc;
+}
+
+function canvasPngBytes(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) return reject(new Error('Could not rasterise a PDF page for export'));
+      blob.arrayBuffer().then((buffer) => resolve(new Uint8Array(buffer)), reject);
+    }, 'image/png');
+  });
+}
+
+async function applyAnnotationsAndSave(doc, annotations, options = {}) {
+  const { baselineRatios = {}, stamps = new Map(), loadAsset = null, getFontkit = null } = options;
+  const { StandardFonts, rgb, degrees, LineCapStyle } = globalThis.PDFLib;
   const pages = doc.getPages();
 
   const fontCache = new Map();
@@ -148,8 +254,8 @@ export async function stampPdf(bytes, annotations, options = {}) {
         doc.registerFontkit(await getFontkit());
         fontkitReady = true;
       }
-      const bytes = await loadAsset(bold && paths.hasBold !== false ? paths.bold : paths.regular);
-      return await doc.embedFont(bytes, { subset: true });
+      const fontBytes = await loadAsset(bold && paths.hasBold !== false ? paths.bold : paths.regular);
+      return await doc.embedFont(fontBytes, { subset: true });
     } catch {
       // Losing the handwriting is a disappointment. Losing the notes because
       // one file failed to load would be a bug.
@@ -201,7 +307,7 @@ export async function stampPdf(bytes, annotations, options = {}) {
     if (!page) continue;
 
     const { width, height } = page.getSize();
-    const rotation = normaliseAngle(page.getRotation().angle + (annotation.rot || 0));
+    const rotation = normaliseAngle((page.getRotation()?.angle || 0) + (annotation.rot || 0));
     const upright = rotation % 180 === 0;
 
     const context = {
@@ -237,7 +343,8 @@ export async function stampPdf(bytes, annotations, options = {}) {
     }
   }
 
-  return doc.save();
+  // Skip AcroForm appearance rewrites; some unlocked forms crash there.
+  return doc.save({ updateFieldAppearances: false });
 }
 
 // ---------------------------------------------------------------- annotations
