@@ -1,0 +1,70 @@
+{
+  "manifest_version": 3,
+  "name": "Write on PDF",
+  "version": "1.1.0",
+  "description": "Type, Draw, Sign and Print PDFs instantly in Microsoft Edge.",
+  "homepage_url": "https://codekp.com",
+  "minimum_chrome_version": "116",
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "webNavigation",
+    "webRequest",
+    "scripting",
+    "tabs",
+    "downloads",
+    "declarativeNetRequestWithHostAccess"
+  ],
+
+  "host_permissions": ["<all_urls>"],
+
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/capture-main.js"],
+      "world": "MAIN",
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/capture-bridge.js"],
+      "world": "ISOLATED",
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true
+    }
+  ],
+
+  "web_accessible_resources": [
+    {
+      "resources": ["src/viewer.html"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+
+  "action": {
+    "default_popup": "src/popup.html",
+    "default_title": "Write on PDF",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}
