@@ -1,12 +1,20 @@
 <p align="center">
-  <img src=".github/media/banner.png" alt="Write on PDF by CodeKP: type, sign and save PDFs in Chrome" width="820">
+  <img src=".github/media/banner.png" alt="Write on PDF by CodeKP: type, sign and save PDFs in your browser" width="820">
 </p>
 
 <p align="center">
-  <b>Write, draw, sign, highlight, save and print PDFs directly in Chrome. Private, local and free.</b>
+  <b>Write, draw, sign, highlight, save and print PDFs directly in Chrome or Edge. Private, local and free.</b>
 </p>
 
 <p align="center">
+  <a href="https://chromewebstore.google.com/detail/write-on-pdf/gleppfjgfdailpkclgfmojbeemmepinh"><img src="https://img.shields.io/badge/Chrome_Web_Store-1.0.0-4285F4?logo=googlechrome&logoColor=white" alt="Chrome Web Store 1.0.0"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/latest-1.2.0-0A7A28" alt="Latest version 1.2.0"></a>
+  <img src="https://img.shields.io/badge/runs-offline-555" alt="Runs offline">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="Licence GPL-3.0"></a>
+</p>
+
+<p align="center">
+  <a href="https://chromewebstore.google.com/detail/write-on-pdf/gleppfjgfdailpkclgfmojbeemmepinh">Chrome Web Store</a> ·
   <a href="https://codekp.com/apps/write-on-pdf/">Try the live editor</a> ·
   <a href="https://codekp.com/apps/write-on-pdf/privacy.html">Privacy</a> ·
   <a href="https://github.com/TheCodeKP/Write-on-PDF/releases">Releases</a> ·
@@ -17,27 +25,32 @@
 
 A free extension for Chrome and Microsoft Edge that opens PDFs in its own editor so you can type on them, highlight, sign, then print or save. Your files stay on your machine. Nothing is uploaded, there is no account, and there is no analytics of any kind.
 
+**What's new in 1.2:** password-protected PDFs (saved copy is unlocked) and a shared Chrome/Edge build. On [GitHub](https://github.com/TheCodeKP/Write-on-PDF/releases) now; Chrome and Edge store updates are in review. Store listing today is still **1.0.0**.
+
 ## What it looks like
 
-<img src=".github/media/type-highlight-tick.png" alt="Filling an appointment form: typed answers, a yellow highlight, ticked boxes and a signature" width="100%">
+<img src=".github/media/hero-overview.png" alt="The full editor open on a form: toolbar, typed text, highlight, ticks, signature, Save and Print" width="100%">
 
-<img src=".github/media/import-clean-sign.png" alt="Importing a photo of a signature, fading the paper away, then placing it on a contract" width="100%">
+<img src=".github/media/form-filling.png" alt="Filling an appointment form: typed answers, a yellow highlight, ticked boxes and a signature" width="100%">
+
+<img src=".github/media/signature-workflow.png" alt="Importing a photo of a signature, fading the paper away, then placing it on a contract" width="100%">
+
+<img src=".github/media/open-password-protected.png" alt="Unlocking a password-protected PDF, editing it, then saving a copy without a password" width="100%">
 
 <img src=".github/media/keep-it-local.png" alt="A marked up proposal being saved and printed, with no uploads and no watermarks" width="100%">
 
 ## Install
 
-**From the Chrome Web Store.** The listing is in review. When it is approved, a one-click install link lands here and on [codekp.com](https://codekp.com/apps/write-on-pdf/).
+**Chrome Web Store (1.0.0).** [Add it to Chrome](https://chromewebstore.google.com/detail/write-on-pdf/gleppfjgfdailpkclgfmojbeemmepinh).
 
-**From a release, today.**
+**GitHub (1.2.0).** Download the latest zip from [Releases](https://github.com/TheCodeKP/Write-on-PDF/releases/latest), or clone this repository, then load unpacked:
 
-1. Download the latest zip from [Releases](https://github.com/TheCodeKP/Write-on-PDF/releases/latest), or clone this repository.
-2. Open `chrome://extensions`.
-3. Turn on **Developer mode** (top right).
-4. Click **Load unpacked** and select the folder.
-5. On the extension's card, turn on **Allow access to file URLs** if you want local PDFs and finished downloads to open in the editor too.
+1. Open `chrome://extensions` (or `edge://extensions` on Edge).
+2. Turn on **Developer mode** (top right).
+3. Click **Load unpacked** and select the extension folder.
+4. On the extension's card, turn on **Allow access to file URLs** if you want local PDFs and finished downloads to open in the editor too.
 
-**Without installing anything.** The same editor runs on the [website](https://codekp.com/apps/write-on-pdf/), on the same code that ships here.
+**Try on the site.** The same editor runs on [codekp.com](https://codekp.com/apps/write-on-pdf/), with no install.
 
 ## Tools
 
@@ -97,7 +110,7 @@ Click the extension icon:
 
 ## Known limits
 
-- Chrome's PDF setting should stay on **Open PDFs in Chrome**.
+- Chrome's PDF setting should stay on **Open PDFs in Chrome** (on Edge, keep PDFs opening in the browser).
 - Some restricted pages cannot run content scripts; use the popup rescue button.
 - Stamped text uses Helvetica, Times, Courier or a handwriting face (Latin-1). Characters outside that set may show as `?`.
 - Handwriting faces ship as a single weight, so Bold and Italic are unavailable while one is chosen.
@@ -107,8 +120,9 @@ Click the extension icon:
 
 Every version is tagged and released here, with notes written from [CHANGELOG.md](CHANGELOG.md).
 
+- [1.2.0](https://github.com/TheCodeKP/Write-on-PDF/releases/tag/v1.2.0), 9 August 2026. Password-protected PDFs and shared Chrome/Edge builds. On GitHub; Chrome and Edge store updates in review.
 - [1.1.0](https://github.com/TheCodeKP/Write-on-PDF/releases/tag/v1.1.0), 7 August 2026. Signatures, images, text boxes, handwriting, pen, shapes, find, multi select, copy and paste.
-- [1.0.0](https://github.com/TheCodeKP/Write-on-PDF/releases/tag/v1.0.0), 6 August 2026. First public build, submitted to the Chrome Web Store.
+- [1.0.0](https://github.com/TheCodeKP/Write-on-PDF/releases/tag/v1.0.0), 6 August 2026. First public build. Live on the [Chrome Web Store](https://chromewebstore.google.com/detail/write-on-pdf/gleppfjgfdailpkclgfmojbeemmepinh).
 
 ## Feedback
 
