@@ -15,7 +15,7 @@
 
 ---
 
-A free Chrome extension that opens PDFs in its own editor so you can type on them, highlight, sign, then print or save. Your files stay on your machine. Nothing is uploaded, there is no account, and there is no analytics of any kind.
+A free extension for Chrome and Microsoft Edge that opens PDFs in its own editor so you can type on them, highlight, sign, then print or save. Your files stay on your machine. Nothing is uploaded, there is no account, and there is no analytics of any kind.
 
 ## What it looks like
 
@@ -85,7 +85,7 @@ Notes are stamped as real text and vectors, not a screenshot of the page.
 
 ## Privacy
 
-No server, no accounts, no analytics, no network calls at runtime. Your PDFs, signatures and preferences live in Chrome's own storage on your device. The full policy is in [PRIVACY.md](PRIVACY.md).
+No server, no accounts, no analytics, no network calls at runtime. Your PDFs, signatures and preferences live in the browser's own storage on your device. Saving a password-protected PDF writes an unlocked copy. Printing decrypts in memory for the print dialog and does not download a file. The full policy is in [PRIVACY.md](PRIVACY.md).
 
 ## Turning it off
 
@@ -101,7 +101,7 @@ Click the extension icon:
 - Some restricted pages cannot run content scripts; use the popup rescue button.
 - Stamped text uses Helvetica, Times, Courier or a handwriting face (Latin-1). Characters outside that set may show as `?`.
 - Handwriting faces ship as a single weight, so Bold and Italic are unavailable while one is chosen.
-- Password-protected PDFs ask for the password, then work as usual.
+- Password-protected PDFs ask for the password, then you can annotate as usual. Saving writes an unlocked copy: the password and restrictions are removed from that file. Save shows a one-time warning before the download. Printing decrypts the PDF in memory for the print dialog; it does not download a file.
 
 ## Releases
 
@@ -118,4 +118,4 @@ Found a PDF it handles badly, or want a tool that is missing? Open an [issue](ht
 
 GPL-3.0. See [LICENSE](LICENSE).
 
-PDF.js, pdf-lib and fontkit ship under `vendor/` with their own licences. The handwriting fonts are under the Open Font Licence; the licence travels with them in `vendor/fonts/OFL.txt`.
+PDF.js, pdf-lib, Cantoo pdf-lib and fontkit ship under `vendor/` with their own licences. The handwriting fonts are under the Open Font Licence; the licence travels with them in `vendor/fonts/OFL.txt`.
