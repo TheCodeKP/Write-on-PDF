@@ -2,6 +2,19 @@
 
 All notable changes to Write on PDF. Versions follow the manifest.
 
+## 1.2.0
+
+Password-protected PDFs and a single shared source for Chrome and Edge builds.
+
+### Added
+
+- Open, annotate, Save and Print for password-protected PDFs. Export decrypts
+  the file first, then stamps your notes. The first Save shows a one-time
+  warning that the download is no longer password protected.
+- Per-browser manifests and a build step that assembles Chrome and Edge
+  bundles from the same source. The product name stays Write on PDF on every
+  browser; the browser name appears only in the build folder name.
+
 ## 1.1.0
 
 Builds a full annotation toolkit on top of the 1.0 typing and highlighting.
