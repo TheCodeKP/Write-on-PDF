@@ -1123,8 +1123,15 @@ function syncAlignGroup() {
 }
 
 // Left / center / right inside a text box. Point text has no box width, so
-// these only show for the Text box tool or a selected wrapping note.
+// these only show for the Text box tool or a single selected wrapping note.
+// Multi-select is for lining notes up against each other, so the inside-the-box
+// controls stay hidden then.
 function syncTextAlignGroup() {
+  if (annotations.selection.size > 1) {
+    el.textAlignGroup.hidden = true;
+    return;
+  }
+
   const record = annotations.selected;
   const forBox = annotations.tool === 'textbox' || (record?.kind === 'text' && record.wrap);
   el.textAlignGroup.hidden = !forBox;

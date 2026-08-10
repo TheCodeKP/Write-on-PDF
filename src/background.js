@@ -17,6 +17,22 @@ const bypassTabs = new Map(); // tabId -> { expiry, url, ruleId }
 // blob: navigations often skip webNavigation events, so once we have the bytes
 // we also claim any tab that is already showing that URL.
 const claimedBlobTabs = new Set(); // `${tabId}:${blobUrl}`
+// Saves we just wrote ourselves. Firefox may open the finished download as
+// file://; Path C must not intercept those or Save opens a dead editor tab.
+const recentOwnDownloads = new Map(); // absolute path or basename -> expiry ms
+const OWN_DOWNLOAD_TTL_MS = 60 * 1000;
+const isFirefox = typeof chrome.runtime.getBrowserInfo === 'function';
+// Cached so Firefox stream capture can decide synchronously in onBeforeRequest.
+let takeoverEnabled = true;
+
+async function refreshTakeoverFlag() {
+  try {
+    const { takeover } = await getSettings();
+    takeoverEnabled = takeover !== false;
+  } catch {
+    takeoverEnabled = true;
+  }
+}
 
 async function getSettings() {
   const stored = await chrome.storage.local.get(DEFAULTS);
@@ -58,6 +74,16 @@ function ruleMatches(live, wanted) {
 // that, and the read-before-write above keeps it from writing on each wake.
 async function syncRedirectRule() {
   try {
+    // Firefox: DNR redirect forces a second fetch from moz-extension://, which
+    // Cloudflare-style hosts reject with 403. Stream-capture Path A instead.
+    if (isFirefox) {
+      await chrome.declarativeNetRequest.updateDynamicRules({
+        removeRuleIds: [PDF_RULE_ID],
+        addRules: [],
+      });
+      return;
+    }
+
     const { takeover } = await getSettings();
     const wanted = takeover ? pdfRedirectRule() : null;
     const rules = await chrome.declarativeNetRequest.getDynamicRules();
@@ -83,7 +109,10 @@ chrome.permissions.onAdded.addListener(syncRedirectRule);
 chrome.permissions.onRemoved.addListener(syncRedirectRule);
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.takeover) syncRedirectRule();
+  if (area === 'local' && changes.takeover) {
+    syncRedirectRule();
+    refreshTakeoverFlag();
+  }
 });
 
 // ---------------------------------------------------------------- byte stores
@@ -366,6 +395,18 @@ chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
 
   if (url.startsWith('file://')) {
     if (!/\.pdf(\?.*)?$/i.test(url)) return;
+    if (isRecentOwnDownload(url)) return;
+    // Firefox reports file access as allowed, but moz-extension pages still
+    // cannot fetch file://. Opening the viewer with kind:url always fails and
+    // races Path D. Leave local file tabs alone; Path D handles downloads.
+    if (isFirefox) return;
+    let fileAccess = false;
+    try {
+      fileAccess = await chrome.extension.isAllowedFileSchemeAccess();
+    } catch {
+      fileAccess = false;
+    }
+    if (!fileAccess) return;
     await openInViewer(tabId, { kind: 'url', url, name: fileNameFromUrl(url) });
     return;
   }
@@ -403,6 +444,92 @@ chrome.webRequest.onHeadersReceived.addListener(
   ['responseHeaders']
 );
 
+// Path A (Firefox): capture the first navigation response body. DNR redirect is
+// cleared above because a second fetch from moz-extension:// often gets 403.
+if (isFirefox && chrome.webRequest?.filterResponseData) {
+  chrome.webRequest.onBeforeRequest.addListener(
+    (details) => {
+      if (details.type !== 'main_frame' || details.tabId < 0) return;
+      if (!takeoverEnabled) return;
+      if (shouldSkip(details.tabId, details.url)) return;
+      if (!/\.pdf(\?.*)?$/i.test(details.url)) return;
+
+      let filter;
+      try {
+        filter = chrome.webRequest.filterResponseData(details.requestId);
+      } catch {
+        return;
+      }
+
+      const chunks = [];
+      let total = 0;
+
+      filter.ondata = (event) => {
+        chunks.push(event.data);
+        total += event.data.byteLength;
+      };
+
+      filter.onstop = () => {
+        const bytes = new Uint8Array(total > MAX_BYTES ? 0 : total);
+        if (total > 0 && total <= MAX_BYTES) {
+          let offset = 0;
+          for (const chunk of chunks) {
+            const view = new Uint8Array(chunk);
+            bytes.set(view, offset);
+            offset += view.byteLength;
+          }
+        }
+
+        const okPdf = total > 0 && total <= MAX_BYTES && looksLikePdf(bytes);
+        if (!okPdf) {
+          for (const chunk of chunks) {
+            try {
+              filter.write(chunk);
+            } catch {
+              // ignore
+            }
+          }
+          try {
+            filter.close();
+          } catch {
+            // ignore
+          }
+          return;
+        }
+
+        try {
+          filter.close();
+        } catch {
+          // ignore
+        }
+
+        void (async () => {
+          try {
+            const key = await stashSource({
+              kind: 'bytes',
+              b64: bytesToBase64(bytes),
+              name: fileNameFromUrl(details.url),
+            });
+            await chrome.tabs.update(details.tabId, { url: `${VIEWER_URL}#k=${key}` });
+          } catch {
+            // Tab may have closed.
+          }
+        })();
+      };
+
+      filter.onerror = () => {
+        try {
+          filter.disconnect();
+        } catch {
+          // ignore
+        }
+      };
+    },
+    { urls: ['<all_urls>'], types: ['main_frame'] },
+    ['blocking']
+  );
+}
+
 // Path D: downloads never navigate, so nothing above can catch them.
 chrome.downloads.onChanged.addListener(async (delta) => {
   if (delta.state?.current !== 'complete') return;
@@ -416,26 +543,249 @@ chrome.downloads.onChanged.addListener(async (delta) => {
   // Skip the copies we produce ourselves, otherwise Save would bounce straight
   // back into a new editor tab.
   const ownPrefix = `blob:${chrome.runtime.getURL('')}`;
-  if (item.byExtensionId === chrome.runtime.id) return;
-  if (item.url?.startsWith(ownPrefix) || item.finalUrl?.startsWith(ownPrefix)) return;
+  const skipOwnId = item.byExtensionId === chrome.runtime.id;
+  const skipOwnUrl =
+    Boolean(item.url?.startsWith(ownPrefix)) ||
+    Boolean(item.finalUrl?.startsWith(ownPrefix));
+  if (skipOwnId || skipOwnUrl) {
+    rememberOwnDownload(item.filename);
+    return;
+  }
 
-  const key = await stashSource({
-    kind: 'url',
-    url: pathToFileUrl(item.filename),
-    name: item.filename.split(/[\\/]/).pop(),
-  });
-  chrome.tabs.create({ url: `${VIEWER_URL}#k=${key}` });
+  const name = item.filename.split(/[\\/]/).pop();
+  const remote = [item.finalUrl, item.url].find((u) => /^https?:/i.test(u || ''));
+
+  if (remote) {
+    const remoteBytes = await loadRemotePdfBytes(remote, item.referrer || '');
+    if (remoteBytes.ok && remoteBytes.b64) {
+      const key = await stashSource({ kind: 'bytes', b64: remoteBytes.b64, name });
+      chrome.tabs.create({ url: `${VIEWER_URL}#k=${key}` });
+      return;
+    }
+  }
+
+  let fileAccess = false;
+  try {
+    fileAccess = await chrome.extension.isAllowedFileSchemeAccess();
+  } catch {
+    fileAccess = false;
+  }
+
+  const fileUrl = pathToFileUrl(item.filename);
+  if (fileAccess && !isFirefox) {
+    try {
+      const response = await fetch(fileUrl);
+      if (response.ok) {
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (bytes.byteLength > MAX_BYTES || !looksLikePdf(bytes)) return;
+        const key = await stashSource({ kind: 'bytes', b64: bytesToBase64(bytes), name });
+        chrome.tabs.create({ url: `${VIEWER_URL}#k=${key}` });
+        return;
+      }
+    } catch {
+      // fall through
+    }
+    const key = await stashSource({ kind: 'url', url: fileUrl, name });
+    chrome.tabs.create({ url: `${VIEWER_URL}#k=${key}` });
+    return;
+  }
+
+  if (!isFirefox) return;
+
+  // Firefox cannot read the saved path. If the download itself is a tiny HTML
+  // stub (Cloudflare / hotlink page saved as .pdf), skip the empty editor.
+  const savedBytes = Number(item.fileSize ?? item.totalBytes ?? 0);
+  if (savedBytes > 0 && savedBytes < 4096) return;
+
+  chrome.tabs.create({ url: VIEWER_URL });
+  try {
+    await chrome.downloads.show(item.id);
+  } catch {
+    // ignore
+  }
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => revokeBypass(tabId));
 
 // -------------------------------------------------------------------- helpers
 
+function rememberOwnDownload(filename) {
+  if (!filename) return;
+  const expiry = Date.now() + OWN_DOWNLOAD_TTL_MS;
+  recentOwnDownloads.set(filename, expiry);
+  const base = filename.split(/[\\/]/).pop();
+  if (base) recentOwnDownloads.set(base, expiry);
+}
+
+function isRecentOwnDownload(fileUrlOrPath) {
+  const now = Date.now();
+  for (const [key, expiry] of recentOwnDownloads) {
+    if (now > expiry) recentOwnDownloads.delete(key);
+  }
+  if (!fileUrlOrPath) return false;
+  let path = fileUrlOrPath;
+  try {
+    if (/^file:/i.test(fileUrlOrPath)) path = decodeURIComponent(new URL(fileUrlOrPath).pathname);
+  } catch {
+    // keep raw
+  }
+  const normalised = path.replace(/\//g, '\\');
+  const base = path.split(/[\\/]/).pop();
+  return (
+    recentOwnDownloads.has(fileUrlOrPath) ||
+    recentOwnDownloads.has(path) ||
+    recentOwnDownloads.has(normalised) ||
+    (base ? recentOwnDownloads.has(base) : false)
+  );
+}
+
 function pathToFileUrl(path) {
   const normalised = path.replace(/\\/g, '/');
   const withRoot = normalised.startsWith('/') ? normalised : `/${normalised}`;
   // encodeURI keeps the drive colon and separators intact, unlike encodeURIComponent.
   return encodeURI(`file://${withRoot}`).replace(/#/g, '%23').replace(/\?/g, '%3F');
+}
+
+function bytesToBase64(bytes) {
+  let binary = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
+
+function looksLikePdf(bytes) {
+  return (
+    bytes &&
+    bytes.byteLength >= 5 &&
+    bytes[0] === 0x25 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x44 &&
+    bytes[3] === 0x46
+  ); // %PDF
+}
+
+function pdfHead(bytes) {
+  if (!bytes?.byteLength) return '';
+  const n = Math.min(bytes.byteLength, 8);
+  let out = '';
+  for (let i = 0; i < n; i++) out += String.fromCharCode(bytes[i]);
+  return out;
+}
+
+async function bytesFromResponse(response) {
+  if (!response?.ok) return { ok: false, status: response?.status ?? null };
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.byteLength > MAX_BYTES) return { ok: false, status: response.status, err: 'too large' };
+  if (!looksLikePdf(bytes)) {
+    return {
+      ok: false,
+      status: response.status,
+      err: 'not-pdf',
+      bytes: bytes.byteLength,
+      head: pdfHead(bytes),
+    };
+  }
+  return {
+    ok: true,
+    status: response.status,
+    bytes: bytes.byteLength,
+    b64: bytesToBase64(bytes),
+    head: pdfHead(bytes),
+  };
+}
+
+async function loadRemotePdfBytes(pdfUrl, referrer) {
+  // Prefer the HTTP cache: Save-link-as just filled it, and a normal re-fetch
+  // often 403s or returns an HTML stub.
+  for (const cache of ['force-cache', 'default']) {
+    try {
+      const response = await fetch(pdfUrl, { credentials: 'include', cache });
+      const parsed = await bytesFromResponse(response);
+      if (parsed.ok) return { ...parsed, via: `bg:${cache}` };
+    } catch {
+      // try next
+    }
+  }
+
+  const viaPage = await fetchPdfViaPageTab(pdfUrl, referrer);
+  if (viaPage?.ok) return { ...viaPage, via: 'page' };
+  return viaPage || { ok: false, err: 'remote failed' };
+}
+
+// Fetch a PDF URL from inside a normal https tab so Referer / site cookies match
+// what the download button used.
+async function fetchPdfViaPageTab(pdfUrl, referrer) {
+  const hosts = [];
+  for (const candidate of [referrer, pdfUrl]) {
+    try {
+      hosts.push(new URL(candidate).origin);
+    } catch {
+      // ignore
+    }
+  }
+
+  const tabs = [];
+  for (const origin of hosts) {
+    try {
+      const found = await chrome.tabs.query({ url: `${origin}/*` });
+      for (const tab of found) {
+        if (tab.id != null && !tabs.some((t) => t.id === tab.id)) tabs.push(tab);
+      }
+    } catch {
+      // query pattern rejected
+    }
+  }
+
+  if (!tabs.length) return { ok: false, err: 'no matching site tab' };
+
+  for (const tab of tabs) {
+    try {
+      const [injection] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        world: 'MAIN',
+        func: async (url) => {
+          const tryCache = async (cache) => {
+            const response = await fetch(url, { credentials: 'include', cache });
+            if (!response.ok) return { ok: false, status: response.status, cache };
+            const bytes = new Uint8Array(await response.arrayBuffer());
+            const head = String.fromCharCode(...bytes.slice(0, Math.min(8, bytes.length)));
+            if (!(bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46)) {
+              return { ok: false, status: response.status, err: 'not-pdf', bytes: bytes.byteLength, head, cache };
+            }
+            let binary = '';
+            const CHUNK = 0x8000;
+            for (let i = 0; i < bytes.length; i += CHUNK) {
+              binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+            }
+            return { ok: true, b64: btoa(binary), bytes: bytes.byteLength, status: response.status, head, cache };
+          };
+          try {
+            const cached = await tryCache('force-cache');
+            if (cached.ok) return cached;
+            return await tryCache('default');
+          } catch (error) {
+            return { ok: false, err: String(error?.message || error) };
+          }
+        },
+        args: [pdfUrl],
+      });
+      const result = injection?.result;
+      if (!result) continue;
+      let tabHost = null;
+      try {
+        tabHost = new URL(tab.url || '').host;
+      } catch {
+        tabHost = null;
+      }
+      if (result.ok && result.b64) return { ...result, tabHost };
+      if (result.status || result.err) return { ...result, tabHost };
+    } catch (error) {
+      return { ok: false, err: String(error?.message || error) };
+    }
+  }
+  return { ok: false, err: 'page fetch failed' };
 }
 
 function fileNameFromUrl(url) {
@@ -478,8 +828,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
       // Deliberately not dropped here, so reloading the viewer tab still works.
       // The TTL sweep clears it instead.
-      case 'get-source':
-        return sendResponse((await takeSource(message.key)) || null);
+      case 'get-source': {
+        const source = (await takeSource(message.key)) || null;
+        return sendResponse(source);
+      }
 
       case 'bypass': {
         await grantBypass(message.tabId, message.url);
@@ -530,3 +882,4 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 // Last, so every listener above is registered synchronously before this yields.
 syncRedirectRule();
+refreshTakeoverFlag();

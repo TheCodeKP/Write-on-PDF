@@ -690,9 +690,15 @@ export class Annotations {
     const candidate = over ? this.records.get(over.dataset.id) : null;
     const overId = candidate && PICKS_UP[this.tool]?.(candidate) ? candidate.id : null;
 
-    // A press inside text this tool would pick up anyway is left to the browser,
-    // so the caret lands on the letter it was aimed at.
-    if (overId && event.target.closest('.content')) return;
+    // Existing text: single click selects. Editing is a double click on the note
+    // (content stays non-editable until then, so Firefox cannot steal the caret).
+    if (overId && event.target.closest('.content')) {
+      const entry = this.elements.get(overId);
+      if (entry && document.activeElement === entry.content) return;
+      event.preventDefault();
+      this.#pickUp(overId);
+      return;
+    }
 
     const rect = page.layer.getBoundingClientRect();
     const point = {
@@ -726,23 +732,21 @@ export class Annotations {
     if (this.tool === 'pen') this.pending.raw = [point];
   }
 
-  // Selects an existing mark. Under Select, text is only highlighted: a double
-  // click opens the caret. With the Text or Text box tool in hand, picking one
-  // up still drops the caret, since that tool is for writing.
+  // Selects an existing mark. Single click selects (move / copy); double click
+  // opens the caret. New notes still enter edit mode when they are first placed.
   #pickUp(id) {
     this.#select(id);
-    if (
-      this.records.get(id)?.kind === 'text' &&
-      (this.tool === 'text' || this.tool === 'textbox')
-    ) {
-      this.elements.get(id)?.content.focus();
-    }
+  }
+
+  #setTextEditing(content, on) {
+    content.contentEditable = on ? 'plaintext-only' : 'false';
   }
 
   #beginTextEdit(id) {
     const entry = this.elements.get(id);
     if (!entry?.content || this.records.get(id)?.kind !== 'text') return;
     this.#select(id);
+    this.#setTextEditing(entry.content, true);
     entry.content.focus();
   }
 
@@ -758,7 +762,18 @@ export class Annotations {
       ...this.#toRecordPoint(x, point.y - lineHeightRatio / 2),
     });
 
-    this.elements.get(record.id)?.content.focus();
+    const content = this.elements.get(record.id)?.content;
+    // Focus after the pointer gesture ends. Focusing during the same
+    // pointerdown that called preventDefault is accepted then immediately
+    // blurred on Firefox, which destroys the still-empty note and leaves
+    // keystrokes to the tool shortcuts. Text box already focuses on pointerup.
+    const focusNote = () => {
+      if (!content?.isConnected) return;
+      this.#setTextEditing(content, true);
+      content.focus();
+    };
+    window.addEventListener('pointerup', focusNote, { once: true });
+    window.addEventListener('pointercancel', focusNote, { once: true });
   }
 
   #snapTextX(pageIndex, displayX) {
@@ -873,7 +888,11 @@ export class Annotations {
       }
 
       this.#select(record.id);
-      this.elements.get(record.id)?.content.focus();
+      const boxContent = this.elements.get(record.id)?.content;
+      if (boxContent) {
+        this.#setTextEditing(boxContent, true);
+        boxContent.focus();
+      }
       this.onChange();
       return;
     }
@@ -1122,8 +1141,9 @@ export class Annotations {
         return;
       }
 
-      // First click on a text note selects (and can drag). Editing is a
-      // double click, so a single press must not drop the caret.
+      // First click selects (and can drag). Editing is a double click.
+      // Notes are not contenteditable until edit mode, so a single press cannot
+      // drop the caret.
       if (record.kind === 'text' && event.target.closest('.content')) {
         event.preventDefault();
         event.stopPropagation();
@@ -1142,7 +1162,9 @@ export class Annotations {
 
     if (record.kind === 'text') {
       element.addEventListener('dblclick', (event) => {
-        if (this.tool !== 'select') return;
+        if (this.tool !== 'select' && this.tool !== 'text' && this.tool !== 'textbox') {
+          return;
+        }
         if (event.target.closest('.handle, .remove, .grip')) return;
         event.preventDefault();
         event.stopPropagation();
@@ -1164,7 +1186,9 @@ export class Annotations {
 
     const content = document.createElement('div');
     content.className = 'content';
-    content.contentEditable = 'plaintext-only';
+    // Off until place or double-click enables editing. Keeps single-click from
+    // focusing a caret on Firefox.
+    content.contentEditable = 'false';
     content.spellcheck = false;
     content.textContent = entry.record.text;
 
@@ -1184,7 +1208,10 @@ export class Annotations {
     });
     content.addEventListener('focusout', (event) => {
       entry.element.classList.remove('editing');
+      // Style controls steal focus briefly; keep the note editable so resume can
+      // put the caret back.
       if (event.relatedTarget?.closest(STYLE_CONTROLS)) return;
+      this.#setTextEditing(content, false);
       if (!entry.record.text.trim()) this.#destroy(entry.record.id);
       else this.onChange();
     });
