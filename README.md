@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <b>Write, draw, sign, highlight, save and print PDFs directly in Chrome or Edge. Private, local and free.</b>
+  <b>Write, draw, sign, highlight, save and print PDFs directly in Chrome, Edge or Firefox. Private, local and free.</b>
 </p>
 
 <p align="center">
@@ -23,9 +23,9 @@
 
 ---
 
-A free extension for Chrome and Microsoft Edge that opens PDFs in its own editor so you can type on them, highlight, sign, then print or save. Your files stay on your machine. Nothing is uploaded, there is no account, and there is no analytics of any kind.
+A free extension for Chrome, Microsoft Edge and Firefox that opens PDFs in its own editor so you can type on them, highlight, sign, then print or save. Your files stay on your machine. Nothing is uploaded, there is no account, and there is no analytics of any kind.
 
-**What's new in 1.2:** password-protected PDFs (saved copy is unlocked) and a shared Chrome/Edge build. On [GitHub](https://github.com/TheCodeKP/Write-on-PDF/releases) now; Chrome and Edge store updates are in review. Store listing today is still **1.0.0**.
+**What's new in 1.2:** password-protected PDFs (saved copy is unlocked) and shared Chrome, Edge and Firefox builds. On [GitHub](https://github.com/TheCodeKP/Write-on-PDF/releases) now; Chrome, Edge and Firefox store updates are in review. The Chrome Web Store listing today is still **1.0.0**.
 
 ## What it looks like
 
@@ -43,12 +43,11 @@ A free extension for Chrome and Microsoft Edge that opens PDFs in its own editor
 
 **Chrome Web Store (1.0.0).** [Add it to Chrome](https://chromewebstore.google.com/detail/write-on-pdf/gleppfjgfdailpkclgfmojbeemmepinh).
 
-**GitHub (1.2.0).** Download the latest zip from [Releases](https://github.com/TheCodeKP/Write-on-PDF/releases/latest), or clone this repository, then load unpacked:
+**GitHub (1.2.0).** Download a browser zip from [Releases](https://github.com/TheCodeKP/Write-on-PDF/releases/latest) (`write-on-pdf-chrome-1.2.0.zip`, `write-on-pdf-edge-1.2.0.zip`, or `write-on-pdf-firefox-1.2.0.zip`), or clone this repository, then load unpacked:
 
-1. Open `chrome://extensions` (or `edge://extensions` on Edge).
-2. Turn on **Developer mode** (top right).
-3. Click **Load unpacked** and select the extension folder.
-4. On the extension's card, turn on **Allow access to file URLs** if you want local PDFs and finished downloads to open in the editor too.
+1. Open `chrome://extensions` (Chrome), `edge://extensions` (Edge), or `about:debugging#/runtime/this-firefox` (Firefox).
+2. On Chrome or Edge, turn on **Developer mode** (top right), then **Load unpacked** and select the unzipped folder. On Firefox, choose **Load Temporary Add-on…** and select `manifest.json` inside the unzipped folder.
+3. For local files and finished downloads: on Chrome or Edge, turn on **Allow access to file URLs** on the extension card. On Firefox, open **about:addons**, find Write on PDF, open **Permissions and data**, and turn on **Access local files on your computer** (temporary add-ons may not show that switch until a signed build is installed).
 
 **Try on the site.** The same editor runs on [codekp.com](https://codekp.com/apps/write-on-pdf/), with no install.
 
@@ -112,6 +111,8 @@ Click the extension icon:
 
 - Chrome's PDF setting should stay on **Open PDFs in Chrome** (on Edge, keep PDFs opening in the browser).
 - Some restricted pages cannot run content scripts; use the popup rescue button.
+- On Firefox, opening a PDF already saved as a `file://` path from disk is limited: the extension cannot always read those bytes the way Chrome can with file URL access. Prefer opening the PDF from a web link, or drop the file into the editor.
+- Some "Save Link As" downloads are HTML stubs or blocked responses rather than real PDFs (common with hotlink protection). The extension opens the editor only when the saved bytes look like a PDF.
 - Stamped text uses Helvetica, Times, Courier or a handwriting face (Latin-1). Characters outside that set may show as `?`.
 - Handwriting faces ship as a single weight, so Bold and Italic are unavailable while one is chosen.
 - Password-protected PDFs ask for the password, then you can annotate as usual. Saving writes an unlocked copy: the password and restrictions are removed from that file. Save shows a one-time warning before the download. Printing decrypts the PDF in memory for the print dialog; it does not download a file.
@@ -120,7 +121,7 @@ Click the extension icon:
 
 Every version is tagged and released here, with notes written from [CHANGELOG.md](CHANGELOG.md).
 
-- [1.2.0](https://github.com/TheCodeKP/Write-on-PDF/releases/tag/v1.2.0), 9 August 2026. Password-protected PDFs and shared Chrome/Edge builds. On GitHub; Chrome and Edge store updates in review.
+- [1.2.0](https://github.com/TheCodeKP/Write-on-PDF/releases/tag/v1.2.0), 9 August 2026. Password-protected PDFs and shared Chrome, Edge and Firefox builds. On GitHub; Chrome, Edge and Firefox store updates in review.
 - [1.1.0](https://github.com/TheCodeKP/Write-on-PDF/releases/tag/v1.1.0), 7 August 2026. Signatures, images, text boxes, handwriting, pen, shapes, find, multi select, copy and paste.
 - [1.0.0](https://github.com/TheCodeKP/Write-on-PDF/releases/tag/v1.0.0), 6 August 2026. First public build. Live on the [Chrome Web Store](https://chromewebstore.google.com/detail/write-on-pdf/gleppfjgfdailpkclgfmojbeemmepinh).
 

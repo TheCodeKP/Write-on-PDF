@@ -1,8 +1,8 @@
 # Privacy
 
 Write on PDF does not collect, upload, or share your PDFs, annotations, or
-passwords. Everything runs in your browser on your device, in Chrome or
-Microsoft Edge.
+passwords. Everything runs in your browser on your device, in Chrome,
+Microsoft Edge or Firefox.
 
 Saving a password-protected PDF writes an unlocked copy: the password and
 restrictions are removed from that file. Printing decrypts the PDF in memory
