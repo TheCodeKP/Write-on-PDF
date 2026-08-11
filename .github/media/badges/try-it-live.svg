@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="228" height="36" role="img" aria-label="Try it live: codekp.com">
+  <title>Try it live on codekp.com</title>
+  <defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#00C2FF"/>
+      <stop offset="0.35" stop-color="#2E7CF6"/>
+      <stop offset="0.7" stop-color="#5B4BE8"/>
+      <stop offset="1" stop-color="#9B34E8"/>
+    </linearGradient>
+  </defs>
+  <rect width="228" height="36" rx="8" fill="url(#brand)"/>
+  <g fill="#fff" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="0.6">
+    <text x="16" y="23">TRY IT LIVE</text>
+    <text x="132" y="23">CODEKP.COM</text>
+  </g>
+</svg>

@@ -7,25 +7,23 @@
 </p>
 
 <p align="center">
-  <a href="https://chromewebstore.google.com/detail/write-on-pdf/gleppfjgfdailpkclgfmojbeemmepinh"><img src="https://img.shields.io/badge/Chrome_Web_Store-1.0.0-4285F4?logo=googlechrome&logoColor=white" alt="Chrome Web Store 1.0.0"></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/latest-1.2.0-0A7A28" alt="Latest version 1.2.0"></a>
-  <img src="https://img.shields.io/badge/runs-offline-555" alt="Runs offline">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="Licence GPL-3.0"></a>
+  <a href="https://chromewebstore.google.com/detail/write-on-pdf/gleppfjgfdailpkclgfmojbeemmepinh"><img src=".github/media/badges/add-to-chrome.svg" alt="Add to Chrome 1.2.0" height="36"></a>
+  <a href="https://codekp.com/apps/write-on-pdf/"><img src=".github/media/badges/try-it-live.svg" alt="Try it live on codekp.com" height="36"></a>
+  <a href="https://codekp.com/apps/write-on-pdf/privacy.html"><img src=".github/media/badges/no-signup-offline.svg" alt="No sign-up, runs offline" height="36"></a>
+  <a href="LICENSE"><img src=".github/media/badges/licence.svg" alt="Licence GPL-3.0" height="36"></a>
 </p>
 
 <p align="center">
-  <a href="https://chromewebstore.google.com/detail/write-on-pdf/gleppfjgfdailpkclgfmojbeemmepinh">Chrome Web Store</a> ·
-  <a href="https://codekp.com/apps/write-on-pdf/">Try the live editor</a> ·
-  <a href="https://codekp.com/apps/write-on-pdf/privacy.html">Privacy</a> ·
   <a href="https://github.com/TheCodeKP/Write-on-PDF/releases">Releases</a> ·
-  <a href="CHANGELOG.md">Changelog</a>
+  <a href="CHANGELOG.md">Changelog</a> ·
+  <a href="https://codekp.com/apps/write-on-pdf/privacy.html">Privacy</a>
 </p>
 
 ---
 
 A free extension for Chrome, Microsoft Edge and Firefox that opens PDFs in its own editor so you can type on them, highlight, sign, then print or save. Your files stay on your machine. Nothing is uploaded, there is no account, and there is no analytics of any kind.
 
-**What's new in 1.2:** password-protected PDFs (saved copy is unlocked) and shared Chrome, Edge and Firefox builds. On [GitHub](https://github.com/TheCodeKP/Write-on-PDF/releases) now; Chrome, Edge and Firefox store updates are in review. The Chrome Web Store listing today is still **1.0.0**.
+**What's new in 1.2:** password-protected PDFs (saved copy is unlocked) and shared Chrome, Edge and Firefox builds. Live on the [Chrome Web Store](https://chromewebstore.google.com/detail/write-on-pdf/gleppfjgfdailpkclgfmojbeemmepinh) as **1.2.0**. Edge and Firefox store listings are in review; all three browser zips are on [GitHub](https://github.com/TheCodeKP/Write-on-PDF/releases).
 
 ## What it looks like
 
@@ -41,9 +39,9 @@ A free extension for Chrome, Microsoft Edge and Firefox that opens PDFs in its o
 
 ## Install
 
-**Chrome Web Store (1.0.0).** [Add it to Chrome](https://chromewebstore.google.com/detail/write-on-pdf/gleppfjgfdailpkclgfmojbeemmepinh).
+**Chrome Web Store (1.2.0).** [Add it to Chrome](https://chromewebstore.google.com/detail/write-on-pdf/gleppfjgfdailpkclgfmojbeemmepinh).
 
-**GitHub (1.2.0).** Download a browser zip from [Releases](https://github.com/TheCodeKP/Write-on-PDF/releases/latest) (`write-on-pdf-chrome-1.2.0.zip`, `write-on-pdf-edge-1.2.0.zip`, or `write-on-pdf-firefox-1.2.0.zip`), or clone this repository, then load unpacked:
+**GitHub.** Download a browser zip from [Releases](https://github.com/TheCodeKP/Write-on-PDF/releases/latest) (`write-on-pdf-chrome-1.2.0.zip`, `write-on-pdf-edge-1.2.0.zip`, or `write-on-pdf-firefox-1.2.0.zip`), or clone this repository, then load unpacked:
 
 1. Open `chrome://extensions` (Chrome), `edge://extensions` (Edge), or `about:debugging#/runtime/this-firefox` (Firefox).
 2. On Chrome or Edge, turn on **Developer mode** (top right), then **Load unpacked** and select the unzipped folder. On Firefox, choose **Load Temporary Add-on…** and select `manifest.json` inside the unzipped folder.
@@ -121,7 +119,7 @@ Click the extension icon:
 
 Every version is tagged and released here, with notes written from [CHANGELOG.md](CHANGELOG.md).
 
-- [1.2.0](https://github.com/TheCodeKP/Write-on-PDF/releases/tag/v1.2.0), 9 August 2026. Password-protected PDFs and shared Chrome, Edge and Firefox builds. On GitHub; Chrome, Edge and Firefox store updates in review.
+- [1.2.0](https://github.com/TheCodeKP/Write-on-PDF/releases/tag/v1.2.0), 9 August 2026. Password-protected PDFs and shared Chrome, Edge and Firefox builds. Live on the Chrome Web Store; Edge and Firefox store listings in review.
 - [1.1.0](https://github.com/TheCodeKP/Write-on-PDF/releases/tag/v1.1.0), 7 August 2026. Signatures, images, text boxes, handwriting, pen, shapes, find, multi select, copy and paste.
 - [1.0.0](https://github.com/TheCodeKP/Write-on-PDF/releases/tag/v1.0.0), 6 August 2026. First public build. Live on the [Chrome Web Store](https://chromewebstore.google.com/detail/write-on-pdf/gleppfjgfdailpkclgfmojbeemmepinh).
 
