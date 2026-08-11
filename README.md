@@ -7,10 +7,13 @@
 </p>
 
 <p align="center">
-  <a href="https://chromewebstore.google.com/detail/write-on-pdf/gleppfjgfdailpkclgfmojbeemmepinh"><img src=".github/media/badges/add-to-chrome.svg" alt="Add to Chrome 1.2.0" height="36"></a>
   <a href="https://codekp.com/apps/write-on-pdf/"><img src=".github/media/badges/try-it-live.svg" alt="Try it live on codekp.com" height="36"></a>
-  <a href="https://codekp.com/apps/write-on-pdf/privacy.html"><img src=".github/media/badges/no-signup-offline.svg" alt="No sign-up, runs offline" height="36"></a>
-  <a href="LICENSE"><img src=".github/media/badges/licence.svg" alt="Licence GPL-3.0" height="36"></a>
+  <a href="https://chromewebstore.google.com/detail/write-on-pdf/gleppfjgfdailpkclgfmojbeemmepinh"><img src=".github/media/badges/add-to-chrome.svg" alt="Add to Chrome v1.2.0" height="36"></a>
+  <br>
+  <a href="https://codekp.com/apps/write-on-pdf/privacy.html"><img src=".github/media/badges/no-account.svg" alt="No account" height="28"></a>
+  <a href="https://codekp.com/apps/write-on-pdf/privacy.html"><img src=".github/media/badges/local-offline.svg" alt="Local and offline" height="28"></a>
+  <a href="LICENSE"><img src=".github/media/badges/open-source.svg" alt="Open source" height="28"></a>
+  <a href="LICENSE"><img src=".github/media/badges/gpl-3.0.svg" alt="GPL-3.0" height="28"></a>
 </p>
 
 <p align="center">

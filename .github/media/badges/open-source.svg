@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="112" height="28" role="img" aria-label="Open source">
+  <title>Open source</title>
+  <defs>
+    <linearGradient id="dot" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2E7CF6"/>
+      <stop offset="1" stop-color="#9B34E8"/>
+    </linearGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="111" height="27" rx="8" fill="#F6F8FA" stroke="#C5CDD8"/>
+  <circle cx="14" cy="14" r="2.5" fill="url(#dot)"/>
+  <text x="24" y="18" fill="#1A2332" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="10.5" font-weight="600" letter-spacing="0.4">OPEN SOURCE</text>
+</svg>
