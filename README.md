@@ -7,8 +7,11 @@
 </p>
 
 <p align="center">
-  <a href="https://codekp.com/apps/write-on-pdf/"><img src=".github/media/badges/try-it-live.svg" alt="Try it live on codekp.com" height="36"></a>
   <a href="https://chromewebstore.google.com/detail/write-on-pdf/gleppfjgfdailpkclgfmojbeemmepinh"><img src=".github/media/badges/add-to-chrome.svg" alt="Add to Chrome v1.2.0" height="36"></a>
+  <a href="https://microsoftedge.microsoft.com/addons/detail/write-on-pdf/kdpgdipdkhopcfdjhakbdipofgpholae"><img src=".github/media/badges/add-to-edge.svg" alt="Add to Edge v1.2.0" height="36"></a>
+  <a href="https://addons.mozilla.org/addon/write-on-pdf/"><img src=".github/media/badges/add-to-firefox.svg" alt="Add to Firefox v1.2.0" height="36"></a>
+  <br>
+  <a href="https://codekp.com/apps/write-on-pdf/"><img src=".github/media/badges/try-it-live.svg" alt="Try it live on codekp.com" height="36"></a>
   <br>
   <a href="https://codekp.com/apps/write-on-pdf/privacy.html"><img src=".github/media/badges/no-account.svg" alt="No account" height="28"></a>
   <a href="https://codekp.com/apps/write-on-pdf/privacy.html"><img src=".github/media/badges/local-offline.svg" alt="Local and offline" height="28"></a>
@@ -26,7 +29,7 @@
 
 A free extension for Chrome, Microsoft Edge and Firefox that opens PDFs in its own editor so you can type on them, highlight, sign, then print or save. Your files stay on your machine. Nothing is uploaded, there is no account, and there is no analytics of any kind.
 
-**What's new in 1.2:** password-protected PDFs (saved copy is unlocked) and shared Chrome, Edge and Firefox builds. Live on the [Chrome Web Store](https://chromewebstore.google.com/detail/write-on-pdf/gleppfjgfdailpkclgfmojbeemmepinh) as **1.2.0**. Edge and Firefox store listings are in review; all three browser zips are on [GitHub](https://github.com/TheCodeKP/Write-on-PDF/releases).
+**What's new in 1.2:** password-protected PDFs (saved copy is unlocked) and shared Chrome, Edge and Firefox builds. Live as **1.2.0** on the [Chrome Web Store](https://chromewebstore.google.com/detail/write-on-pdf/gleppfjgfdailpkclgfmojbeemmepinh), [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/write-on-pdf/kdpgdipdkhopcfdjhakbdipofgpholae) and [Firefox Add-ons](https://addons.mozilla.org/addon/write-on-pdf/). Browser zips stay on [GitHub](https://github.com/TheCodeKP/Write-on-PDF/releases).
 
 ## What it looks like
 
@@ -43,6 +46,10 @@ A free extension for Chrome, Microsoft Edge and Firefox that opens PDFs in its o
 ## Install
 
 **Chrome Web Store (1.2.0).** [Add it to Chrome](https://chromewebstore.google.com/detail/write-on-pdf/gleppfjgfdailpkclgfmojbeemmepinh).
+
+**Microsoft Edge Add-ons (1.2.0).** [Add it to Edge](https://microsoftedge.microsoft.com/addons/detail/write-on-pdf/kdpgdipdkhopcfdjhakbdipofgpholae).
+
+**Firefox Add-ons (1.2.0).** [Add it to Firefox](https://addons.mozilla.org/addon/write-on-pdf/).
 
 **GitHub.** Download a browser zip from [Releases](https://github.com/TheCodeKP/Write-on-PDF/releases/latest) (`write-on-pdf-chrome-1.2.0.zip`, `write-on-pdf-edge-1.2.0.zip`, or `write-on-pdf-firefox-1.2.0.zip`), or clone this repository, then load unpacked:
 
@@ -122,7 +129,7 @@ Click the extension icon:
 
 Every version is tagged and released here, with notes written from [CHANGELOG.md](CHANGELOG.md).
 
-- [1.2.0](https://github.com/TheCodeKP/Write-on-PDF/releases/tag/v1.2.0), 9 August 2026. Password-protected PDFs and shared Chrome, Edge and Firefox builds. Live on the Chrome Web Store; Edge and Firefox store listings in review.
+- [1.2.0](https://github.com/TheCodeKP/Write-on-PDF/releases/tag/v1.2.0), 9 August 2026. Password-protected PDFs and shared Chrome, Edge and Firefox builds. Live on Chrome, Edge and Firefox.
 - [1.1.0](https://github.com/TheCodeKP/Write-on-PDF/releases/tag/v1.1.0), 7 August 2026. Signatures, images, text boxes, handwriting, pen, shapes, find, multi select, copy and paste.
 - [1.0.0](https://github.com/TheCodeKP/Write-on-PDF/releases/tag/v1.0.0), 6 August 2026. First public build. Live on the [Chrome Web Store](https://chromewebstore.google.com/detail/write-on-pdf/gleppfjgfdailpkclgfmojbeemmepinh).
 
